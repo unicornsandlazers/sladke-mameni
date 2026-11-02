@@ -348,6 +348,34 @@ input[type="range"]:disabled{
     margin-top:12px;
 }
 
+.giftImage{
+    width:100%;
+    max-height:220px;
+    object-fit:cover;
+    border-radius:var(--radius-sm);
+    margin-bottom:16px;
+}
+
+.itemRow{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+}
+
+.itemThumb{
+    width:56px;
+    height:56px;
+    object-fit:cover;
+    border-radius:var(--radius-sm);
+    flex-shrink:0;
+    background:var(--surface);
+}
+
+.itemText{
+    flex:1;
+    min-width:0;
+}
+
 .reviewGift{
     font-weight:600;
 }
