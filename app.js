@@ -11,6 +11,11 @@ const API =
  * Objekty se sladkostmi (v allGifts, queue, reviewData…) mají vždy oba
  * tyhle dva atributy. (Interní názvy proměnných zůstaly "gift" — je to
  * jen implementační detail, uživatel ho nikde nevidí.)
+ *
+ * "imageUrl" (nepovinné, může být "") je odkaz na obrázek sladkosti ze
+ * sloupce C v listu Candies — appka ho jen zobrazí, nijak needituje.
+ * Mají ho jen sladkosti z hlavního seznamu; sladkost přidaná uživatelem
+ * (přes "Přidat sladkost" nebo na konci dotazníku) obrázek nemá.
  */
 const I18N = {
     cs: {
@@ -289,7 +294,8 @@ function remapQueueDisplays(newGifts) {
 
     queue = queue.map(item => ({
         gift: item.gift,
-        giftDisplay: displayByGift[item.gift] || item.giftDisplay
+        giftDisplay: displayByGift[item.gift] || item.giftDisplay,
+        imageUrl: item.imageUrl
     }));
 
     const surveyVisible = document.getElementById("surveyScreen").style.display !== "none";
@@ -478,10 +484,26 @@ async function startSurvey() {
 
 function showGift() {
 
-    document.getElementById("giftName").textContent = queue[0].giftDisplay;
+    const current = queue[0];
+    document.getElementById("giftName").textContent = current.giftDisplay;
+    setGiftImage(current.imageUrl);
 
     document.getElementById("progress").textContent =
         `${allGifts.length - queue.length + 1} / ${allGifts.length}`;
+}
+
+// Zobrazí obrázek sladkosti na hlasovací obrazovce, nebo ho schová, pokud
+// sladkost obrázek nemá (uživatelem přidané nápady obrázek nikdy nemají).
+function setGiftImage(url) {
+    const img = document.getElementById("giftImage");
+
+    if (url) {
+        img.src = url;
+        img.style.display = "block";
+    } else {
+        img.removeAttribute("src");
+        img.style.display = "none";
+    }
 }
 
 function updateSliderValue(slider, labelId) {
@@ -513,6 +535,7 @@ function submitVote() {
     const current = editingIndex !== null ? reviewData[editingIndex] : queue[0];
     const gift = current.gift;
     const giftDisplay = current.giftDisplay;
+    const imageUrl = current.imageUrl;
     const score = Number(document.getElementById("scoreSlider").value);
     const comment = document.getElementById("commentInput").value.trim();
 
@@ -525,7 +548,7 @@ function submitVote() {
     setTimeout(() => {
         voteInFlight = false;
         hideVoteConfirm();
-        finishVote(gift, giftDisplay, score, comment);
+        finishVote(gift, giftDisplay, imageUrl, score, comment);
     }, VOTE_CONFIRM_DELAY_MS);
 }
 
@@ -554,10 +577,10 @@ function hideVoteConfirm() {
     document.getElementById("voteHint").style.display = "block";
 }
 
-function finishVote(gift, giftDisplay, score, comment) {
+function finishVote(gift, giftDisplay, imageUrl, score, comment) {
 
     if (editingIndex !== null) {
-        reviewData[editingIndex] = { gift: gift, giftDisplay: giftDisplay, score: score, comment: comment };
+        reviewData[editingIndex] = { gift: gift, giftDisplay: giftDisplay, imageUrl: imageUrl, score: score, comment: comment };
         editingIndex = null;
         sortReviewData();
         document.getElementById("cancelEditButton").style.display = "none";
@@ -567,7 +590,7 @@ function finishVote(gift, giftDisplay, score, comment) {
         return;
     }
 
-    history.push({ gift: gift, giftDisplay: giftDisplay, score: score, comment: comment });
+    history.push({ gift: gift, giftDisplay: giftDisplay, imageUrl: imageUrl, score: score, comment: comment });
     queue.shift();
     updateBackButtons();
 
@@ -634,9 +657,14 @@ function renderOverview(stats) {
         const scoreText = hasVotes ? formatScore(item.avgScore) : "—";
 
         row.innerHTML =
-            `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
-            `<div class="reviewScore" style="color:${scoreColor}">${scoreText}</div>` +
-            `<div class="hint" style="margin-top:2px;">${voteCountLabel(item.voteCount)}</div>`;
+            `<div class="itemRow">` +
+                (item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="" class="itemThumb" onerror="this.remove()">` : "") +
+                `<div class="itemText">` +
+                    `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
+                    `<div class="reviewScore" style="color:${scoreColor}">${scoreText}</div>` +
+                    `<div class="hint" style="margin-top:2px;">${voteCountLabel(item.voteCount)}</div>` +
+                `</div>` +
+            `</div>`;
 
         container.appendChild(row);
     });
@@ -722,6 +750,7 @@ function renderHighlightList(containerId, items, subtitleFn) {
 
         row.innerHTML =
             `<span class="highlightRank">${index + 1}.</span>` +
+            (item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="" class="itemThumb" onerror="this.remove()">` : "") +
             `<div class="highlightBody">` +
                 `<div class="highlightGift">${escapeHtml(item.giftDisplay)}</div>` +
                 `<div class="hint" style="margin-top:2px;text-align:left;">${subtitleFn(item)}</div>` +
@@ -860,9 +889,14 @@ function renderReview() {
         const scoreColor = item.score > 0 ? "#4f9d70" : item.score < 0 ? "#d97a63" : "#9a9690";
 
         row.innerHTML =
-            `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
-            `<div class="reviewScore" style="color:${scoreColor}">${item.score}</div>` +
-            (item.comment ? `<div class="reviewComment">${escapeHtml(item.comment)}</div>` : "") +
+            `<div class="itemRow">` +
+                (item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="" class="itemThumb" onerror="this.remove()">` : "") +
+                `<div class="itemText">` +
+                    `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
+                    `<div class="reviewScore" style="color:${scoreColor}">${item.score}</div>` +
+                    (item.comment ? `<div class="reviewComment">${escapeHtml(item.comment)}</div>` : "") +
+                `</div>` +
+            `</div>` +
             `<button type="button" class="secondary" onclick="editReviewItem(${index})">${t("edit_button")}</button>`;
 
         container.appendChild(row);
@@ -878,6 +912,7 @@ function editReviewItem(index) {
     document.getElementById("surveyScreen").style.display = "block";
 
     document.getElementById("giftName").textContent = item.giftDisplay;
+    setGiftImage(item.imageUrl);
     document.getElementById("progress").textContent = t("editing_progress");
 
     const slider = document.getElementById("scoreSlider");
@@ -903,7 +938,7 @@ function goBack() {
     if (history.length === 0) return;
 
     const prev = history.pop();
-    queue.unshift({ gift: prev.gift, giftDisplay: prev.giftDisplay });
+    queue.unshift({ gift: prev.gift, giftDisplay: prev.giftDisplay, imageUrl: prev.imageUrl });
     updateBackButtons();
 
     document.getElementById("finishScreen").style.display = "none";
