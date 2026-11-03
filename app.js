@@ -21,7 +21,9 @@ const API =
 const I18N = {
     cs: {
         home: "← Domů",
-        app_title: "Rodinný průzkum sladkostí",
+        app_title: "Sladké mámení",
+        app_intro: "Rodinný průzkum sladkostí. Hlasujte o sladkostech, aby ostatní věděli, čím vás můžou potěšit. Buďte co nejkonkrétnější – u čokolády a zmrzliny pište příchutě a/nebo značky. Pokud něco chybí, doplňte to.",
+        footer_gifts_link: "🎁 Rodinný průzkum dárků",
         name_label: "Jak se jmenuješ?",
         name_placeholder: "Začni psát jméno",
         start_button: "Hodnotit sladkosti",
@@ -84,7 +86,9 @@ const I18N = {
     },
     sk: {
         home: "← Domov",
-        app_title: "Rodinný prieskum sladkostí",
+        app_title: "Sladké mámení",
+        app_intro: "Rodinný prieskum sladkostí. Hlasujte o sladkostiach, aby ostatní vedeli, čím vás môžu potešiť. Buďte čo najkonkrétnejší – pri čokoláde a zmrzline píšte príchute a/alebo značky. Ak niečo chýba, doplňte to.",
+        footer_gifts_link: "🎁 Rodinný prieskum darčekov",
         name_label: "Ako sa voláš?",
         name_placeholder: "Začni písať meno",
         start_button: "Hodnotiť sladkosti",
@@ -147,7 +151,9 @@ const I18N = {
     },
     fr: {
         home: "← Accueil",
-        app_title: "Sondage familial sur les bonbons",
+        app_title: "Sladké mámení",
+        app_intro: "Sondage familial sur les bonbons. Votez pour que les autres sachent comment vous faire plaisir. Soyez le plus précis possible : pour le chocolat et les glaces, indiquez les parfums et/ou les marques. S'il manque quelque chose, ajoutez-le.",
+        footer_gifts_link: "🎁 Sondage familial sur les cadeaux",
         name_label: "Comment tu t'appelles ?",
         name_placeholder: "Commence à taper ton prénom",
         start_button: "Évaluer les bonbons",
@@ -281,6 +287,7 @@ function applyStaticTranslations() {
     });
 
     document.documentElement.lang = lang;
+    document.title = t("app_title");
 }
 
 function updateLangButtons() {
