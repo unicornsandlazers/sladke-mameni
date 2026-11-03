@@ -555,11 +555,23 @@ button:disabled{
 }
 
 .intro{
-    text-align:center;
+    background:var(--accent-soft);
+    border-radius:var(--radius-sm);
+    padding:14px 16px;
+    margin:-8px 0 4px;
+}
+
+.introLead{
+    font-size:14px;
+    font-weight:700;
+    color:#4a3fc0;
+}
+
+.introText{
+    margin:4px 0 0;
     font-size:14px;
     line-height:1.5;
-    color:var(--text-muted);
-    margin:-14px 0 4px;
+    color:var(--text);
 }
 
 .footer{
