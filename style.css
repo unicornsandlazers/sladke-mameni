@@ -602,3 +602,34 @@ button:disabled{
 .footer a:hover{
     text-decoration:underline;
 }
+
+.nameRow{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+}
+
+.nameRow > div{
+    min-width:0;
+}
+
+.searchLink{
+    flex-shrink:0;
+    display:inline-flex;
+    align-items:center;
+    min-height:32px;
+    padding:0 10px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:#4a3fc0;
+    font-size:12px;
+    font-weight:600;
+    text-decoration:none;
+    white-space:nowrap;
+}
+
+.searchLink:hover{
+    border-color:var(--accent);
+}

@@ -4,14 +4,13 @@ const API =
 "https://script.google.com/macros/s/AKfycbx5V4k_x-f4do-e2b0Wj8LD30tdjA57UCizFEkBd_kH-AdDBIzt1dq0JHuBw3kRf9KVEw/exec";
 
 /**
- * Jména respondentů se nikdy nepřekládají. U sladkostí appka rozlišuje
- * "gift" (kanonický, nepřeložený název — používá se jako klíč při
- * hlasování a párování odpovědí) a "giftDisplay" (přeložený text pro
- * zobrazení, počítá ho backend přes Code.gs podle zvoleného jazyka).
- * Objekty se sladkostmi (v allGifts, reviewData…) mají vždy oba tyhle
- * dva atributy. (Interní názvy proměnných zůstaly "gift" — je to jen
- * implementační detail z původní appky o dárcích, uživatel ho nikde
- * nevidí.)
+ * Jména respondentů ani názvy sladkostí se nepřekládají — sladkost se ve
+ * všech jazycích zobrazuje pod původním názvem, jak ho kdo napsal ("gift",
+ * slouží zároveň jako klíč při hlasování). Automatický překlad názvů
+ * značek byl nespolehlivý. Ve francouzské verzi je u sladkostí místo toho
+ * odkaz na vyhledávání v Googlu. (Interní názvy proměnných zůstaly
+ * "gift" — je to jen implementační detail z původní appky o dárcích,
+ * uživatel ho nikde nevidí.)
  *
  * Hlasuje se pěti smajlíky (LEVELS) přímo v seznamu všech sladkostí.
  * Na backend se ukládají jako -10 / -5 / 0 / 5 / 10, takže Přehled
@@ -35,6 +34,7 @@ const I18N = {
         confirm_new_name: 'Jméno "{name}" jsme zatím v seznamu nenašli. Chceš pokračovat jako nový respondent?',
         check_name: "Zkontroluj prosím jméno, nebo ho vyber ze seznamu.",
         load_start_error: "Něco se pokazilo při načítání. Zkus to prosím znovu.",
+        search_google: "Hledat „{gift}“ na Googlu",
         grid_title: "Sladkosti",
         voting_as: "Hlasuje:",
         rated_count: "ohodnoceno {voted} z {total}",
@@ -167,6 +167,7 @@ const I18N = {
         confirm_new_name: 'On n\'a pas trouvé "{name}" dans la liste. Tu veux continuer en tant que nouveau participant ?',
         check_name: "Vérifie ton prénom ou choisis-le dans la liste.",
         load_start_error: "Un problème est survenu pendant le chargement. Réessaie, s'il te plaît.",
+        search_google: "Rechercher « {gift} » sur Google",
         grid_title: "Bonbons",
         voting_as: "Votant :",
         rated_count: "{voted} sur {total} évalués",
@@ -319,23 +320,18 @@ function isVisible(id) {
     return document.getElementById(id).style.display !== "none";
 }
 
-// Po přepnutí jazyka je potřeba přenačíst přeložené názvy sladkostí
-// v aktuálně otevřené obrazovce (statické popisky se přepnou samy
-// přes applyStaticTranslations, ale názvy sladkostí se překládají na
-// backendu, takže je nutné je znovu natáhnout).
-async function refreshDynamicScreen() {
+// Po přepnutí jazyka se statické popisky přepnou samy přes
+// applyStaticTranslations; obrazovky skládané v JS (texty počtu hlasů,
+// odkazy na Google ve FR) je potřeba vykreslit znovu.
+function refreshDynamicScreen() {
     if (isVisible("gridScreen")) {
-        renderGrid();
-        await loadGifts();
         renderGrid();
     } else if (isVisible("overviewScreen")) {
         showOverview();
     } else if (isVisible("highlightsScreen")) {
         showHighlights();
     } else if (isVisible("reviewScreen") && reviewUser) {
-        loadReviewFor(reviewUser);
-    } else {
-        loadGifts();
+        renderReview();
     }
 }
 
@@ -351,13 +347,13 @@ let reviewData = [];
 let reviewVotes = new Map();
 
 function loadGifts() {
-    return fetch(`${API}?action=gifts&lang=${lang}`)
+    return fetch(`${API}?action=gifts`)
         .then(response => response.json())
         .then(data => {
             if (!Array.isArray(data)) throw new Error(data && data.error ? data.error : "Neplatná odpověď");
 
             // Sladkosti přidané v téhle session si nechá, i kdyby je backend
-            // (např. kvůli cache překladů) ještě nevrátil.
+            // ještě nevrátil.
             const known = new Set(data.map(g => g.gift));
             allGifts.forEach(g => {
                 if (!known.has(g.gift) && addedThisSession.indexOf(g.gift) >= 0) data.push(g);
@@ -582,7 +578,7 @@ function matchKey(text) {
 }
 
 function giftKeys(item) {
-    return [matchKey(item.giftDisplay), matchKey(item.gift)];
+    return [matchKey(item.gift)];
 }
 
 function sortedGifts() {
@@ -592,7 +588,7 @@ function sortedGifts() {
         .filter(Boolean);
     const rest = allGifts
         .filter(g => addedThisSession.indexOf(g.gift) < 0)
-        .sort((a, b) => collator.compare(a.giftDisplay, b.giftDisplay));
+        .sort((a, b) => collator.compare(a.gift, b.gift));
     return added.concat(rest);
 }
 
@@ -688,8 +684,8 @@ function createCandyTile(item, votes, voterName, options) {
 
     const name = document.createElement("div");
     name.className = "candyName";
-    name.textContent = item.giftDisplay;
-    name.title = item.giftDisplay;
+    name.textContent = item.gift;
+    name.title = item.gift;
     head.appendChild(name);
 
     if (options && options.isNew) {
@@ -699,12 +695,16 @@ function createCandyTile(item, votes, voterName, options) {
         head.appendChild(badge);
     }
 
+    if (showSearchLinks()) {
+        head.insertAdjacentHTML("beforeend", searchLinkHtml(item.gift));
+    }
+
     tile.appendChild(head);
 
     const levels = document.createElement("div");
     levels.className = "levels";
     levels.setAttribute("role", "group");
-    levels.setAttribute("aria-label", item.giftDisplay);
+    levels.setAttribute("aria-label", item.gift);
 
     const buttons = LEVELS.map(level => {
         const btn = document.createElement("button");
@@ -761,7 +761,7 @@ async function addCandy() {
         const gift = response.gift || text;
 
         if (!allGifts.some(g => g.gift === gift)) {
-            allGifts.push({ gift: gift, giftDisplay: gift });
+            allGifts.push({ gift: gift });
         }
         if (!response.existed && addedThisSession.indexOf(gift) < 0) {
             addedThisSession.unshift(gift);
@@ -793,7 +793,7 @@ async function showOverview() {
     container.innerHTML = `<p class="hint">${t("loading")}</p>`;
 
     try {
-        const response = await fetch(`${API}?action=giftstats&lang=${lang}`);
+        const response = await fetch(`${API}?action=giftstats`);
         const stats = await response.json();
         if (!Array.isArray(stats)) throw new Error(stats && stats.error);
         renderOverview(stats);
@@ -833,7 +833,7 @@ function renderOverview(stats) {
         const scoreText = hasVotes ? `${emojiForScore(item.avgScore)} ${formatScore(item.avgScore)}` : "—";
 
         row.innerHTML =
-            `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
+            `<div class="nameRow"><div class="reviewGift">${escapeHtml(item.gift)}</div>${showSearchLinks() ? searchLinkHtml(item.gift) : ""}</div>` +
             `<div class="reviewScore" style="color:${color}">${scoreText}</div>` +
             `<div class="hint" style="margin-top:2px;text-align:left;">${voteCountLabel(item.voteCount)}</div>`;
 
@@ -854,7 +854,7 @@ async function loadReviewFor(name) {
     container.innerHTML = `<p class="hint">${t("loading")}</p>`;
 
     try {
-        const response = await fetch(`${API}?action=myresponses&name=${encodeURIComponent(name)}&lang=${lang}`);
+        const response = await fetch(`${API}?action=myresponses&name=${encodeURIComponent(name)}`);
         const data = await response.json();
         if (!Array.isArray(data)) throw new Error(data && data.error);
 
@@ -908,7 +908,7 @@ async function showHighlights() {
     });
 
     try {
-        const response = await fetch(`${API}?action=highlights&lang=${lang}`);
+        const response = await fetch(`${API}?action=highlights`);
         const data = await response.json();
         if (data.error) throw new Error(data.error);
 
@@ -944,7 +944,7 @@ function renderHighlightList(containerId, items, subtitleFn) {
         row.innerHTML =
             `<span class="highlightRank">${index + 1}.</span>` +
             `<div class="highlightBody">` +
-                `<div class="highlightGift">${escapeHtml(item.giftDisplay)}</div>` +
+                `<div class="nameRow"><div class="highlightGift">${escapeHtml(item.gift)}</div>${showSearchLinks() ? searchLinkHtml(item.gift) : ""}</div>` +
                 `<div class="hint" style="margin-top:2px;text-align:left;">${escapeHtml(subtitleFn(item))}</div>` +
                 renderDistribution(item.histogram) +
             `</div>`;
@@ -1013,6 +1013,20 @@ function closeAllDotPopups() {
 document.addEventListener("click", closeAllDotPopups);
 
 /* ---------- Pomocné ---------- */
+
+// Odkaz na vyhledání sladkosti v Googlu — jen ve francouzské verzi, kde
+// lidé české a slovenské značky často neznají. Slovo "sladkost" v dotazu
+// pomůže odlišit sladkost od jiných věcí stejného jména (Magnum, Mila…).
+function showSearchLinks() {
+    return lang === "fr";
+}
+
+function searchLinkHtml(gift) {
+    const url = "https://www.google.com/search?q=" + encodeURIComponent(`${gift} sladkost`);
+    return `<a class="searchLink" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" ` +
+        `aria-label="${escapeAttr(t("search_google", { gift: gift }))}" title="${escapeAttr(t("search_google", { gift: gift }))}" ` +
+        `onclick="event.stopPropagation()">🔎 Google</a>`;
+}
 
 function escapeHtml(str) {
     const div = document.createElement("div");
