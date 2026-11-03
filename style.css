@@ -194,6 +194,17 @@ button:disabled{
     font-size:13px;
 }
 
+/* Na úvodní obrazovce hláška místo předem nerezervuje — bez ní je mezi
+   tlačítkem a oddělovačem jen běžná mezera. */
+#loginMessage{
+    min-height:0;
+    margin:10px 0 0;
+}
+
+#loginMessage:empty{
+    margin:0;
+}
+
 .divider{
     height:1px;
     background:var(--border);
