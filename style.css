@@ -194,6 +194,17 @@ button:disabled{
     font-size:13px;
 }
 
+/* Na úvodní obrazovce hláška místo předem nerezervuje — bez ní je mezi
+   tlačítkem a oddělovačem jen běžná mezera. */
+#loginMessage{
+    min-height:0;
+    margin:10px 0 0;
+}
+
+#loginMessage:empty{
+    margin:0;
+}
+
 .divider{
     height:1px;
     background:var(--border);
@@ -555,11 +566,23 @@ button:disabled{
 }
 
 .intro{
-    text-align:center;
+    background:var(--accent-soft);
+    border-radius:var(--radius-sm);
+    padding:14px 16px;
+    margin:-8px 0 4px;
+}
+
+.introLead{
+    font-size:14px;
+    font-weight:700;
+    color:#4a3fc0;
+}
+
+.introText{
+    margin:4px 0 0;
     font-size:14px;
     line-height:1.5;
-    color:var(--text-muted);
-    margin:-14px 0 4px;
+    color:var(--text);
 }
 
 .footer{
