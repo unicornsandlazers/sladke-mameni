@@ -4,9 +4,9 @@
  * Očekávaná struktura Google Sheetu (3 listy):
  * - "Respondents": sloupec A = jméno respondenta (řádek 1 = hlavička)
  * - "Candies":     sloupec A = název sladkosti, B = jazyk originálu
- *                  (cs/sk/fr; prázdné/neplatné se bere jako cs), C = URL
- *                  obrázku (nepovinné — prázdné se bere jako "bez obrázku") —
- *                  řádek 1 = hlavička
+ *                  (cs/sk/fr; prázdné/neplatné se bere jako cs) —
+ *                  řádek 1 = hlavička. Seznam se plní hlavně přímo
+ *                  z appky (pole "Hledat nebo přidat sladkost").
  * - "Responses":   A = časová značka, B = jméno, C = sladkost,
  *                  D = kategorie (odvozená ze skóre), E = skóre (-10..10),
  *                  F = komentář
@@ -31,7 +31,13 @@
  * doGet akce: respondents, gifts, uservotes, myresponses, giftstats,
  *             highlights (všechny kromě uservotes/respondents přijímají
  *             ?lang=cs|sk|fr)
- * doPost typy: start, addgift, (bez type = uložení hlasu)
+ * doPost typy: start, addgift, unvote (odebrání hlasu),
+ *              (bez type = uložení hlasu)
+ *
+ * Hlasuje se pětistupňovou škálou (smajlíky v appce), která se ukládá
+ * jako -10 / -5 / 0 / 5 / 10 — díky tomu fungují průměry, Přehled
+ * i Zajímavosti beze změny. Jiné hodnoty se zaokrouhlí na nejbližší
+ * stupeň.
  *
  * Po každé úpravě tohoto souboru je potřeba v Apps Scriptu udělat
  * Deploy > Manage deployments > (tužka) Edit > New version > Deploy,
@@ -91,19 +97,40 @@ function doPost(e) {
       }
       const name = data.name.trim();
       addRespondentIfMissing_(name);
-      // Rovnou vrátíme i seznam sladkostí, které tenhle člověk už ohodnotil,
-      // ať appka nemusí posílat samostatný požadavek navíc.
-      return json({ success: true, alreadyVoted: getUserVotes_(name.toLowerCase()) });
+      // Rovnou vrátíme i hlasy, které tenhle člověk už dal (sladkost +
+      // skóre), ať appka hned vyznačí zvolené smajlíky. "alreadyVoted"
+      // zůstává kvůli kompatibilitě se starší verzí frontendu (během
+      // přechodu, než se GitHub Pages nasadí).
+      const nameLower = name.toLowerCase();
+      return json({
+        success: true,
+        votes: getUserVoteScores_(nameLower),
+        alreadyVoted: getUserVotes_(nameLower)
+      });
     }
 
     if (data.type === "addgift") {
       if (!data.gift || !data.gift.trim()) {
         return json({ error: "Chybí název sladkosti." });
       }
-      // Jazyk sladkosti odvozujeme z jazyka appky, ve kterém ho člověk zrovna
-      // psal — to je spolehlivější odhad než automatická detekce.
-      addGiftIfMissing_(data.gift.trim(), normalizeLang_(data.lang));
-      return json({ success: true });
+      // Jazyk sladkosti odvozujeme z jazyka appky, ve kterém ji člověk zrovna
+      // psal — to je spolehlivější odhad než automatická detekce. Vracíme
+      // kanonický název: pokud stejná sladkost (bez ohledu na velikost
+      // písmen a diakritiku) už v seznamu je, appka použije tu existující.
+      const result = addGiftIfMissing_(data.gift.trim(), normalizeLang_(data.lang));
+      return json({ success: true, gift: result.gift, existed: result.existed });
+    }
+
+    if (data.type === "unvote") {
+      if (!data.name || !data.gift) {
+        return json({ error: "Chybí jméno nebo sladkost." });
+      }
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
+      const row = findResponseRow_(sheet, data.name.trim().toLowerCase(), data.gift);
+      if (row > 0) {
+        sheet.deleteRow(row);
+      }
+      return json({ success: true, removed: row > 0 });
     }
 
     if (!data.name || !data.gift || typeof data.score !== "number" || isNaN(data.score)) {
@@ -145,35 +172,43 @@ function normalizeLang_(lang) {
   return SUPPORTED_LANGS.indexOf(l) >= 0 ? l : "cs";
 }
 
-// Mapa sladkost → metadata (jazyk originálu + URL obrázku), podle sloupců
-// B a C v listu Candies. Chybějící/neplatný jazyk se bere jako "cs" (appka
-// byla původně jen česká), chybějící obrázek jako "" (appka ho pak
-// jednoduše nezobrazí).
-function getGiftMetaMap_() {
+// Mapa sladkost → jazyk originálu podle sloupce B v listu Candies.
+// Chybějící/neplatný jazyk se bere jako "cs" (appka byla původně jen česká).
+function getGiftLanguageMap_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Candies");
   if (!sheet) return {};
 
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return {};
 
-  const values = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
   const map = {};
 
   values.forEach(row => {
     const gift = String(row[0]).trim();
     if (!gift) return;
-    map[gift] = {
-      lang: normalizeLang_(row[1]),
-      imageUrl: String(row[2] || "").trim()
-    };
+    map[gift] = normalizeLang_(row[1]);
   });
 
   return map;
 }
 
+// Zaokrouhlí skóre na nejbližší z pěti stupňů (-10, -5, 0, 5, 10).
 function clampScore_(score) {
-  const rounded = Math.round(score);
-  return Math.max(-10, Math.min(10, rounded));
+  const snapped = Math.round(score / 5) * 5;
+  return Math.max(-10, Math.min(10, snapped));
+}
+
+// Klíč pro porovnání názvů sladkostí: bez ohledu na velikost písmen,
+// diakritiku a okolní/vícenásobné mezery ("kofila" = "Kofila", "Pecet" =
+// "Pečeť"). Kdyby runtime neuměl String.normalize, porovnává se aspoň bez
+// ohledu na velikost písmen.
+function matchKey_(text) {
+  let s = String(text || "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (typeof s.normalize === "function") {
+    s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  }
+  return s;
 }
 
 function categoryFromScore_(score) {
@@ -230,6 +265,23 @@ function getUserVotes_(nameLower) {
     .map(row => String(row[1]).trim());
 }
 
+// Hlasy daného člověka jako [{ gift, score }] — pro vyznačení zvolených
+// smajlíků v appce.
+function getUserVoteScores_(nameLower) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
+  if (!sheet) return [];
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  // B = jméno, C = sladkost, D = kategorie, E = skóre
+  const values = sheet.getRange(2, 2, lastRow - 1, 4).getValues();
+
+  return values
+    .filter(row => String(row[0]).trim().toLowerCase() === nameLower)
+    .map(row => ({ gift: String(row[1]).trim(), score: Number(row[3]) }));
+}
+
 function getUserResponses_(nameLower, lang) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
   if (!sheet) return [];
@@ -239,21 +291,18 @@ function getUserResponses_(nameLower, lang) {
 
   // B = jméno, C = sladkost, D = kategorie, E = skóre, F = komentář
   const values = sheet.getRange(2, 2, lastRow - 1, 5).getValues();
-  const metaMap = getGiftMetaMap_();
+  const langMap = getGiftLanguageMap_();
 
   return values
     .filter(row => String(row[0]).trim().toLowerCase() === nameLower)
     .map(row => {
       const gift = String(row[1]).trim();
-      const meta = metaMap[gift] || {};
       return {
         gift: gift,
-        // U sladkostí mimo seznam Candies (např. přidaných přes "další nápad"
-        // na konci dotazníku) jazyk originálu neznáme — tam se použije
-        // záložní automatická detekce v translateText_. Obrázek takové
-        // sladkosti mít nebude.
-        giftDisplay: translateText_(gift, meta.lang, lang),
-        imageUrl: meta.imageUrl || "",
+        // U sladkostí mimo seznam Candies (např. ručně smazaných ze seznamu)
+        // jazyk originálu neznáme — tam se použije záložní automatická
+        // detekce v translateText_.
+        giftDisplay: translateText_(gift, langMap[gift], lang),
         score: Number(row[3]),
         comment: String(row[4] || "").trim()
       };
@@ -275,29 +324,31 @@ function addRespondentIfMissing_(name) {
   }
 }
 
+// Přidá sladkost do seznamu, pokud tam ještě není (porovnává se přes
+// matchKey_). Vrací { gift, existed } — "gift" je kanonický název, pod
+// kterým se pak hlasuje (u existující sladkosti ten, který už v listu je).
 function addGiftIfMissing_(gift, giftLang) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Candies");
-  if (!sheet) return;
+  if (!sheet) throw new Error('List "Candies" neexistuje.');
 
-  const existing = getColumnValues_("Candies", 1);
-  const giftLower = gift.toLowerCase();
-  const exists = existing.some(g => g.toLowerCase() === giftLower);
+  const cleaned = String(gift).trim().replace(/\s+/g, " ");
+  const key = matchKey_(cleaned);
+  const existing = getColumnValues_("Candies", 1).find(g => matchKey_(g) === key);
 
-  if (!exists) {
-    sheet.appendRow([gift, giftLang]);
+  if (existing) {
+    return { gift: existing, existed: true };
   }
+
+  sheet.appendRow([cleaned, giftLang]);
+  return { gift: cleaned, existed: false };
 }
 
 function getGiftsWithDisplay_(lang) {
-  const metaMap = getGiftMetaMap_();
-  return getColumnValues_("Candies", 1).map(gift => {
-    const meta = metaMap[gift] || {};
-    return {
-      gift: gift,
-      giftDisplay: translateText_(gift, meta.lang, lang),
-      imageUrl: meta.imageUrl || ""
-    };
-  });
+  const langMap = getGiftLanguageMap_();
+  return getColumnValues_("Candies", 1).map(gift => ({
+    gift: gift,
+    giftDisplay: translateText_(gift, langMap[gift], lang)
+  }));
 }
 
 // Průměrné skóre a počet hlasů pro každou sladkost ze seznamu Candies, seřazené
@@ -306,7 +357,7 @@ function getGiftsWithDisplay_(lang) {
 // názvu — u přeložených verzí by řazení mezi jazyky nesedělo).
 function getGiftStats_(lang) {
   const gifts = getColumnValues_("Candies", 1);
-  const metaMap = getGiftMetaMap_();
+  const langMap = getGiftLanguageMap_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
 
   const sums = {};
@@ -335,11 +386,9 @@ function getGiftStats_(lang) {
 
   gifts.forEach(gift => {
     const count = counts[gift] || 0;
-    const meta = metaMap[gift] || {};
     const item = {
       gift: gift,
-      giftDisplay: translateText_(gift, meta.lang, lang),
-      imageUrl: meta.imageUrl || "",
+      giftDisplay: translateText_(gift, langMap[gift], lang),
       avgScore: count > 0 ? sums[gift] / count : null,
       voteCount: count
     };
@@ -363,7 +412,7 @@ function getGiftStats_(lang) {
 // nemá smysl.
 function getHighlights_(lang) {
   const gifts = getColumnValues_("Candies", 1);
-  const metaMap = getGiftMetaMap_();
+  const langMap = getGiftLanguageMap_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
 
   const entriesByGift = {};
@@ -395,12 +444,10 @@ function getHighlights_(lang) {
       const sum = scores.reduce((a, b) => a + b, 0);
       const avg = sum / scores.length;
       const variance = scores.reduce((acc, s) => acc + Math.pow(s - avg, 2), 0) / scores.length;
-      const meta = metaMap[gift] || {};
 
       return {
         gift: gift,
-        giftDisplay: translateText_(gift, meta.lang, lang),
-        imageUrl: meta.imageUrl || "",
+        giftDisplay: translateText_(gift, langMap[gift], lang),
         avgScore: avg,
         voteCount: scores.length,
         min: Math.min.apply(null, scores),
