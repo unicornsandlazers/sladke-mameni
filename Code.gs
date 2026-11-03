@@ -3,34 +3,25 @@
  *
  * Očekávaná struktura Google Sheetu (3 listy):
  * - "Respondents": sloupec A = jméno respondenta (řádek 1 = hlavička)
- * - "Candies":     sloupec A = název sladkosti, B = jazyk originálu
- *                  (cs/sk/fr; prázdné/neplatné se bere jako cs) —
- *                  řádek 1 = hlavička. Seznam se plní hlavně přímo
- *                  z appky (pole "Hledat nebo přidat sladkost").
+ * - "Candies":     sloupec A = název sladkosti, B = jazyk, ve kterém ji
+ *                  někdo přidal (cs/sk/fr; jen informativní, appka ho
+ *                  nikde nepoužívá) — řádek 1 = hlavička. Seznam se plní
+ *                  hlavně přímo z appky (pole "Hledat nebo přidat
+ *                  sladkost").
  * - "Responses":   A = časová značka, B = jméno, C = sladkost,
  *                  D = kategorie (odvozená ze skóre), E = skóre (-10..10),
  *                  F = komentář
  *
- * Vícejazyčnost: jména se nepřekládají. Název sladkosti se v listech
- * ukládá a používá jako klíč (pro hlasování, "už odhlasováno" apod.)
- * vždy v původním jazyce, v jakém ho kdo napsal — v kódu se tomu říká
- * "gift" (interní název proměnné zůstal z původní verze appky o
- * dárcích — je to jen implementační detail). Pro zobrazení uživateli
- * se navíc počítá "giftDisplay", přeložený za běhu přes LanguageApp
- * do jazyka podle parametru "lang" (cs/sk/fr, výchozí cs), s
- * cachováním přes CacheService (6 hodin), ať appka zbytečně
- * nevytěžuje kvótu překladače a je rychlá.
- *
- * Zdrojový jazyk sladkosti (sloupec B v Candies) appka posílá do
- * LanguageApp explicitně místo automatické detekce — u krátkých/
- * nejednoznačných názvů uměla automatická detekce špatně tipnout
- * jazyk a vyrobit tak z překladu úplně jiné slovo. Když je cílový
- * jazyk stejný jako originál, appka překlad rovnou přeskočí (vrátí
- * originál beze změny).
+ * Vícejazyčnost řeší jen frontend (texty appky). Jména ani názvy
+ * sladkostí se nepřekládají: sladkost se ve všech jazycích ukazuje pod
+ * původním názvem, jak ho kdo napsal, a ten slouží i jako klíč pro
+ * hlasování — v kódu se mu říká "gift" (interní název proměnné zůstal
+ * z původní verze appky o dárcích — je to jen implementační detail).
+ * (Dřívější automatický překlad přes LanguageApp dělal z názvů značek
+ * nesmysly, proto byl odstraněn.)
  *
  * doGet akce: respondents, gifts, uservotes, myresponses, giftstats,
- *             highlights (všechny kromě uservotes/respondents přijímají
- *             ?lang=cs|sk|fr)
+ *             highlights
  * doPost typy: start, addgift, unvote (odebrání hlasu),
  *              (bez type = uložení hlasu)
  *
@@ -49,7 +40,6 @@ const SUPPORTED_LANGS = ["cs", "sk", "fr"];
 
 function doGet(e) {
   const action = e.parameter.action;
-  const lang = normalizeLang_(e.parameter.lang);
 
   try {
     if (action === "respondents") {
@@ -57,7 +47,7 @@ function doGet(e) {
     }
 
     if (action === "gifts") {
-      return json(getGiftsWithDisplay_(lang));
+      return json(getGifts_());
     }
 
     if (action === "uservotes") {
@@ -67,15 +57,15 @@ function doGet(e) {
 
     if (action === "myresponses") {
       const name = (e.parameter.name || "").trim().toLowerCase();
-      return json(getUserResponses_(name, lang));
+      return json(getUserResponses_(name));
     }
 
     if (action === "giftstats") {
-      return json(getGiftStats_(lang));
+      return json(getGiftStats_());
     }
 
     if (action === "highlights") {
-      return json(getHighlights_(lang));
+      return json(getHighlights_());
     }
 
     return json({ error: "Unknown action" });
@@ -147,10 +137,9 @@ function doPost(e) {
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
 
-    // Pokud už pro tuhle dvojici jméno+sladkost řádek existuje (např. člověk
-    // se vrátil tlačítkem "Zpět" a opravil hodnocení), přepíšeme ho místo
-    // přidání duplicitního řádku. "data.gift" je vždy kanonický (nepřeložený)
-    // název, appka nikdy neposílá přeloženou verzi zpátky.
+    // Pokud už pro tuhle dvojici jméno+sladkost řádek existuje (člověk
+    // změnil hlas jiným smajlíkem), přepíšeme ho místo přidání
+    // duplicitního řádku.
     const existingRow = findResponseRow_(sheet, name.toLowerCase(), data.gift);
 
     if (existingRow > 0) {
@@ -170,27 +159,6 @@ function doPost(e) {
 function normalizeLang_(lang) {
   const l = String(lang || "").trim().toLowerCase();
   return SUPPORTED_LANGS.indexOf(l) >= 0 ? l : "cs";
-}
-
-// Mapa sladkost → jazyk originálu podle sloupce B v listu Candies.
-// Chybějící/neplatný jazyk se bere jako "cs" (appka byla původně jen česká).
-function getGiftLanguageMap_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Candies");
-  if (!sheet) return {};
-
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return {};
-
-  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-  const map = {};
-
-  values.forEach(row => {
-    const gift = String(row[0]).trim();
-    if (!gift) return;
-    map[gift] = normalizeLang_(row[1]);
-  });
-
-  return map;
 }
 
 // Zaokrouhlí skóre na nejbližší z pěti stupňů (-10, -5, 0, 5, 10).
@@ -282,7 +250,7 @@ function getUserVoteScores_(nameLower) {
     .map(row => ({ gift: String(row[1]).trim(), score: Number(row[3]) }));
 }
 
-function getUserResponses_(nameLower, lang) {
+function getUserResponses_(nameLower) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
   if (!sheet) return [];
 
@@ -291,7 +259,6 @@ function getUserResponses_(nameLower, lang) {
 
   // B = jméno, C = sladkost, D = kategorie, E = skóre, F = komentář
   const values = sheet.getRange(2, 2, lastRow - 1, 5).getValues();
-  const langMap = getGiftLanguageMap_();
 
   return values
     .filter(row => String(row[0]).trim().toLowerCase() === nameLower)
@@ -299,10 +266,6 @@ function getUserResponses_(nameLower, lang) {
       const gift = String(row[1]).trim();
       return {
         gift: gift,
-        // U sladkostí mimo seznam Candies (např. ručně smazaných ze seznamu)
-        // jazyk originálu neznáme — tam se použije záložní automatická
-        // detekce v translateText_.
-        giftDisplay: translateText_(gift, langMap[gift], lang),
         score: Number(row[3]),
         comment: String(row[4] || "").trim()
       };
@@ -343,21 +306,15 @@ function addGiftIfMissing_(gift, giftLang) {
   return { gift: cleaned, existed: false };
 }
 
-function getGiftsWithDisplay_(lang) {
-  const langMap = getGiftLanguageMap_();
-  return getColumnValues_("Candies", 1).map(gift => ({
-    gift: gift,
-    giftDisplay: translateText_(gift, langMap[gift], lang)
-  }));
+function getGifts_() {
+  return getColumnValues_("Candies", 1).map(gift => ({ gift: gift }));
 }
 
 // Průměrné skóre a počet hlasů pro každou sladkost ze seznamu Candies, seřazené
 // od nejoblíbenější po nejméně oblíbenou. Sladkosti bez hlasů (avgScore null)
-// jsou vždy až za těmi s hlasy, seřazené abecedně (podle kanonického
-// názvu — u přeložených verzí by řazení mezi jazyky nesedělo).
-function getGiftStats_(lang) {
+// jsou vždy až za těmi s hlasy, seřazené abecedně.
+function getGiftStats_() {
   const gifts = getColumnValues_("Candies", 1);
-  const langMap = getGiftLanguageMap_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
 
   const sums = {};
@@ -388,7 +345,6 @@ function getGiftStats_(lang) {
     const count = counts[gift] || 0;
     const item = {
       gift: gift,
-      giftDisplay: translateText_(gift, langMap[gift], lang),
       avgScore: count > 0 ? sums[gift] / count : null,
       voteCount: count
     };
@@ -410,9 +366,8 @@ function getGiftStats_(lang) {
 // sladkostí (nejvyšší rozptyl hodnocení = rodina se na nich nejvíc neshodla).
 // Kontroverzní počítáme jen ze sladkostí aspoň se 2 hlasy, jinak rozptyl
 // nemá smysl.
-function getHighlights_(lang) {
+function getHighlights_() {
   const gifts = getColumnValues_("Candies", 1);
-  const langMap = getGiftLanguageMap_();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Responses");
 
   const entriesByGift = {};
@@ -447,7 +402,6 @@ function getHighlights_(lang) {
 
       return {
         gift: gift,
-        giftDisplay: translateText_(gift, langMap[gift], lang),
         avgScore: avg,
         voteCount: scores.length,
         min: Math.min.apply(null, scores),
@@ -511,41 +465,6 @@ function buildHistogram_(entries) {
     count: groups[k].length,
     names: groups[k]
   }));
-}
-
-// Přeloží text na požadovaný jazyk přes vestavěnou LanguageApp (Google
-// Translate, zdarma v rámci Apps Scriptu, bez API klíče). "sourceLang" by
-// měl být znám (ze sloupce Language v Candies) — s explicitním zdrojovým
-// jazykem je překlad mnohem spolehlivější než s automatickou detekcí,
-// která u krátkých/nejednoznačných slov uměla uhodnout úplně jiný jazyk
-// a vyrobit z toho nesmyslný překlad. Pokud zdrojový jazyk neznáme (např.
-// u sladkosti přidané mimo formulář pro přidání vlastní sladkosti), použije se jako
-// záloha automatická detekce. Když je cílový jazyk stejný jako zdrojový,
-// překlad se rovnou přeskočí. Výsledek se cachuje na 6 hodin (maximum
-// CacheService), ať se stejný text nepřekládá opakovaně.
-function translateText_(text, sourceLang, targetLang) {
-  if (!text) return text;
-  if (sourceLang && sourceLang === targetLang) return text;
-
-  const cache = CacheService.getScriptCache();
-  const digest = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.MD5,
-    text + "|" + (sourceLang || "") + "|" + targetLang
-  );
-  const cacheKey = "tr_" + Utilities.base64EncodeWebSafe(digest);
-
-  const cached = cache.get(cacheKey);
-  if (cached !== null) return cached;
-
-  let translated;
-  try {
-    translated = LanguageApp.translate(text, sourceLang || "", targetLang);
-  } catch (err) {
-    translated = text; // Když se překlad nepovede, ukážeme radši původní text než chybu.
-  }
-
-  cache.put(cacheKey, translated, 21600);
-  return translated;
 }
 
 function json(data) {
