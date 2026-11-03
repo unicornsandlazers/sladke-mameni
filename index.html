@@ -20,7 +20,7 @@
         <button type="button" class="langBtn" data-lang="fr" onclick="setLang('fr')">FR</button>
     </div>
 
-    <div id="saveStatus" class="saveStatus"></div>
+    <div id="saveStatus" class="saveStatus" aria-live="polite"></div>
 </div>
 
 <div class="container">
@@ -48,50 +48,42 @@
         <button type="button" class="secondary" id="overviewButton" data-i18n="overview_button" onclick="showOverview()"></button>
 
         <button type="button" class="secondary" id="highlightsButton" data-i18n="highlights_button" onclick="showHighlights()"></button>
-
-        <button type="button" class="secondary" id="addGiftScreenButton" data-i18n="addgift_button" onclick="showAddGiftScreen()"></button>
     </div>
 
-    <div id="surveyScreen" class="card" style="display:none;">
-        <div class="progress" id="progress"></div>
+    <div id="gridScreen" style="display:none;">
+        <h1 class="gridTitle" data-i18n="grid_title"></h1>
+        <p class="gridMeta" id="gridMeta"></p>
 
-        <img id="giftImage" class="giftImage" alt="" style="display:none;" onerror="this.style.display='none'">
-
-        <h2 id="giftName"></h2>
-
-        <div class="sliderWrap">
-            <input
-                type="range"
-                id="scoreSlider"
-                min="-10"
-                max="10"
-                step="1"
-                value="0"
-                oninput="updateSliderValue(this, 'sliderValue')">
-
-            <div class="sliderLabels">
-                <span data-i18n="slider_bad"></span>
-                <span data-i18n="slider_neutral"></span>
-                <span data-i18n="slider_good"></span>
+        <div class="card searchCard" id="searchCard">
+            <div id="starterIntro" style="display:none;">
+                <div class="starterTitle" data-i18n="starter_title"></div>
+                <p class="starterText" data-i18n="starter_text"></p>
             </div>
 
-            <div class="sliderValue" id="sliderValue">0</div>
+            <label for="searchInput" data-i18n="search_label"></label>
+            <input type="text" id="searchInput" data-i18n-placeholder="search_placeholder" autocomplete="off" oninput="onSearchInput()">
+
+            <div id="addArea" style="display:none;">
+                <p class="addHint" id="addHint"></p>
+                <button type="button" class="submit" id="addButton" onclick="addCandy()"></button>
+            </div>
+
+            <p id="addMessage" class="message"></p>
         </div>
 
-        <p class="hint" id="voteHint" data-i18n="vote_hint"></p>
-
-        <div class="voteConfirm" id="voteConfirm" style="display:none;"></div>
-
-        <textarea
-            id="commentInput"
-            data-i18n-placeholder="comment_placeholder"
-            rows="2"></textarea>
-
-        <div class="buttonRow">
-            <button type="button" class="secondary" id="backButton" data-i18n="back_button" onclick="goBack()" style="display:none;"></button>
-
-            <button type="button" class="secondary" id="cancelEditButton" data-i18n="cancel_edit_button" onclick="cancelEdit()" style="display:none;"></button>
+        <div class="filterRow">
+            <div class="pills">
+                <button type="button" class="pill" id="filterAll" data-i18n="filter_all" onclick="setFilter('all')"></button>
+                <button type="button" class="pill" id="filterUnvoted" data-i18n="filter_unvoted" onclick="setFilter('unvoted')"></button>
+            </div>
+            <div class="legend" aria-hidden="true">😖🙁😐🙂😍</div>
         </div>
+
+        <p class="gridHint" data-i18n="grid_hint"></p>
+
+        <p class="gridEmpty" id="gridEmpty" style="display:none;"></p>
+
+        <div class="candyList" id="candyList"></div>
     </div>
 
     <div id="overviewScreen" class="card" style="display:none;">
@@ -114,7 +106,7 @@
 
         <h2 id="reviewTitle"></h2>
 
-        <div id="reviewList"></div>
+        <div id="reviewList" class="candyList"></div>
     </div>
 
     <div id="highlightsScreen" class="card" style="display:none;">
@@ -129,55 +121,6 @@
         <h3 data-i18n="top_controversial_heading"></h3>
         <p class="hint" data-i18n="controversial_hint"></p>
         <div id="topControversialList"></div>
-    </div>
-
-    <div id="addGiftScreen" class="card" style="display:none;">
-        <h2 data-i18n="addgift_title"></h2>
-        <p class="hint" data-i18n="addgift_hint"></p>
-
-        <input type="text" id="newGiftInput" data-i18n-placeholder="gift_name_placeholder" autocomplete="off">
-
-        <button class="submit" id="addGiftButton" data-i18n="addgift_submit" onclick="submitNewGift()"></button>
-
-        <p id="addGiftMessage" class="message"></p>
-    </div>
-
-    <div id="finishScreen" class="card" style="display:none;">
-        <h2 id="finishTitle"></h2>
-
-        <button type="button" class="secondary" id="finishBackButton" data-i18n="finish_back_button" onclick="goBack()" style="display:none;"></button>
-
-        <p data-i18n="finish_prompt"></p>
-
-        <input id="extraGift" data-i18n-placeholder="gift_name_placeholder" autocomplete="off">
-
-        <div class="sliderWrap">
-            <input
-                type="range"
-                id="extraScoreSlider"
-                min="-10"
-                max="10"
-                step="1"
-                value="0"
-                oninput="updateSliderValue(this, 'extraSliderValue')">
-
-            <div class="sliderLabels">
-                <span data-i18n="slider_bad"></span>
-                <span data-i18n="slider_neutral"></span>
-                <span data-i18n="slider_good"></span>
-            </div>
-
-            <div class="sliderValue" id="extraSliderValue">0</div>
-        </div>
-
-        <textarea
-            id="extraComment"
-            data-i18n-placeholder="comment_placeholder"
-            rows="2"></textarea>
-
-        <button class="submit" id="addExtraButton" data-i18n="extra_add_button" onclick="saveExtraGift()"></button>
-
-        <p id="extraMessage" class="message"></p>
     </div>
 
 </div>

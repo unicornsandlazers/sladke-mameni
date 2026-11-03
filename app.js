@@ -1,4 +1,4 @@
-// TODO: nahraď URL vlastním Apps Script deploymentem pro tuhle appku
+// URL vlastního Apps Script deploymentu pro tuhle appku
 // (Deploy > New deployment > Web app). Nesmí to být URL appky pro dárky!
 const API =
 "https://script.google.com/macros/s/AKfycbx5V4k_x-f4do-e2b0Wj8LD30tdjA57UCizFEkBd_kH-AdDBIzt1dq0JHuBw3kRf9KVEw/exec";
@@ -8,14 +8,15 @@ const API =
  * "gift" (kanonický, nepřeložený název — používá se jako klíč při
  * hlasování a párování odpovědí) a "giftDisplay" (přeložený text pro
  * zobrazení, počítá ho backend přes Code.gs podle zvoleného jazyka).
- * Objekty se sladkostmi (v allGifts, queue, reviewData…) mají vždy oba
- * tyhle dva atributy. (Interní názvy proměnných zůstaly "gift" — je to
- * jen implementační detail, uživatel ho nikde nevidí.)
+ * Objekty se sladkostmi (v allGifts, reviewData…) mají vždy oba tyhle
+ * dva atributy. (Interní názvy proměnných zůstaly "gift" — je to jen
+ * implementační detail z původní appky o dárcích, uživatel ho nikde
+ * nevidí.)
  *
- * "imageUrl" (nepovinné, může být "") je odkaz na obrázek sladkosti ze
- * sloupce C v listu Candies — appka ho jen zobrazí, nijak needituje.
- * Mají ho jen sladkosti z hlavního seznamu; sladkost přidaná uživatelem
- * (přes "Přidat sladkost" nebo na konci dotazníku) obrázek nemá.
+ * Hlasuje se pěti smajlíky (LEVELS) přímo v seznamu všech sladkostí.
+ * Na backend se ukládají jako -10 / -5 / 0 / 5 / 10, takže Přehled
+ * a Zajímavosti počítají průměry stejně jako dřív. Další klepnutí na
+ * zvolený smajlík hlas odebere.
  */
 const I18N = {
     cs: {
@@ -27,21 +28,33 @@ const I18N = {
         loading: "Načítám…",
         overview_button: "📊 Přehled sladkostí",
         highlights_button: "🏆 Zajímavosti",
-        addgift_button: "➕ Přidat sladkost",
         name_required: "Vyplň prosím jméno.",
         confirm_new_name: 'Jméno "{name}" jsme zatím v seznamu nenašli. Chceš pokračovat jako nový respondent?',
         check_name: "Zkontroluj prosím jméno, nebo ho vyber ze seznamu.",
-        all_done: "Zatím jsi ohodnotil/a všechny sladkosti ze seznamu. Díky! 🎉",
         load_start_error: "Něco se pokazilo při načítání. Zkus to prosím znovu.",
-        slider_bad: "Nevhodné",
-        slider_neutral: "Nemám názor",
-        slider_good: "Ideální",
-        vote_hint: "Posun posuvníku odešle hodnocení a posune tě na další sladkost.",
-        comment_placeholder: "Komentář (nepovinné) — Enter odešle, Shift+Enter nový řádek",
-        back_button: "⬅ Zpět",
-        cancel_edit_button: "Zrušit úpravu",
-        vote_recorded: "✓ Zaznamenáno: {score}",
-        finish_title_default: "Hotovo 🎉",
+        grid_title: "Sladkosti",
+        voting_as: "Hlasuje:",
+        rated_count: "ohodnoceno {voted} z {total}",
+        starter_title: "Seznam teprve vzniká",
+        starter_text: "Zatím tu je jen pár sladkostí. Napiš ty, které máš nejradši (nebo které nesnášíš), a ostatní je pak taky ohodnotí.",
+        search_label: "Hledat nebo přidat sladkost",
+        search_placeholder: "Začni psát, třeba Kofila",
+        add_button: "➕ Přidat „{gift}“",
+        no_match: "Takovou sladkost v seznamu ještě nemáme.",
+        partial_match: "Není to žádná z nalezených? Přidej ji.",
+        add_error: "Nepodařilo se přidat, zkus to prosím znovu.",
+        filter_all: "Vše",
+        filter_unvoted: "Nehodnocené",
+        grid_hint: "Klepni na smajlíka. Dalším klepnutím na stejného smajlíka hlas vezmeš zpět.",
+        all_rated: "Všechny sladkosti máš ohodnocené. Díky! 🎉",
+        nothing_found: "Nic nenalezeno.",
+        list_empty: "Zatím tu nejsou žádné sladkosti. Přidej první!",
+        new_badge: "NOVÁ",
+        level_1: "Fuj",
+        level_2: "Nic moc",
+        level_3: "Ujde",
+        level_4: "Dobrá",
+        level_5: "Miluju",
         overview_title: "Přehled sladkostí",
         person_select_label: "Odpovědi konkrétního člena rodiny",
         person_select_default: "— Vyber jméno —",
@@ -52,8 +65,6 @@ const I18N = {
         responses_for: "Odpovědi: {name}",
         review_empty: "Zatím tu nejsou žádné vyplněné odpovědi.",
         review_load_error: "Nepodařilo se načíst odpovědi. Zkus to prosím znovu.",
-        edit_button: "✏️ Upravit",
-        editing_progress: "Úprava odpovědi",
         highlights_title: "Zajímavosti",
         top_favorite_heading: "🏆 Nejoblíbenější",
         top_unpopular_heading: "💔 Nejméně oblíbené",
@@ -62,20 +73,10 @@ const I18N = {
         highlights_not_enough: "Zatím není dost hlasů.",
         highlights_load_error: "Nepodařilo se načíst.",
         range_label: "hodnocení od {min} do {max}",
-        addgift_title: "Přidat sladkost",
-        addgift_hint: "Nový nápad se přidá do seznamu, příští hlasující ho uvidí.",
-        gift_name_placeholder: "Název sladkosti",
-        addgift_submit: "Přidat do seznamu",
-        gift_name_required: "Napiš prosím název sladkosti.",
-        addgift_success: 'Přidáno: "{gift}" ✅ Uvidí ji příští hlasující.',
-        addgift_error: "Nepodařilo se přidat, zkus to prosím znovu.",
-        finish_back_button: "⬅ Opravit poslední hodnocení",
-        finish_prompt: "Napadá tě ještě další sladkost, kterou jsme v seznamu neměli?",
-        extra_add_button: "Přidat",
-        extra_added: 'Přidáno: "{gift}" ✅',
         save_error_prefix: "⚠️ {count} odpověď(i) se nepodařilo uložit.",
         retry_button: "Zkusit znovu",
         saving: "Ukládám…",
+        saved: "✓ Uloženo",
         votes_none: "zatím bez hlasů",
         vote_one: "hlas",
         vote_few: "hlasy",
@@ -90,21 +91,33 @@ const I18N = {
         loading: "Načítavam…",
         overview_button: "📊 Prehľad sladkostí",
         highlights_button: "🏆 Zaujímavosti",
-        addgift_button: "➕ Pridať sladkosť",
         name_required: "Vyplň prosím meno.",
         confirm_new_name: 'Meno "{name}" sme zatiaľ v zozname nenašli. Chceš pokračovať ako nový respondent?',
         check_name: "Skontroluj prosím meno, alebo ho vyber zo zoznamu.",
-        all_done: "Zatiaľ si ohodnotil/a všetky sladkosti zo zoznamu. Ďakujeme! 🎉",
         load_start_error: "Niečo sa pokazilo pri načítaní. Skús to prosím znovu.",
-        slider_bad: "Nevhodné",
-        slider_neutral: "Nemám názor",
-        slider_good: "Ideálne",
-        vote_hint: "Posun posuvníka odošle hodnotenie a posunie ťa na ďalšiu sladkosť.",
-        comment_placeholder: "Komentár (nepovinné) — Enter odošle, Shift+Enter nový riadok",
-        back_button: "⬅ Späť",
-        cancel_edit_button: "Zrušiť úpravu",
-        vote_recorded: "✓ Zaznamenané: {score}",
-        finish_title_default: "Hotovo 🎉",
+        grid_title: "Sladkosti",
+        voting_as: "Hlasuje:",
+        rated_count: "ohodnotené {voted} z {total}",
+        starter_title: "Zoznam ešte len vzniká",
+        starter_text: "Zatiaľ je tu len pár sladkostí. Napíš tie, ktoré máš najradšej (alebo ktoré neznášaš), a ostatní ich potom tiež ohodnotia.",
+        search_label: "Hľadať alebo pridať sladkosť",
+        search_placeholder: "Začni písať, napríklad Horalky",
+        add_button: "➕ Pridať „{gift}“",
+        no_match: "Takú sladkosť v zozname ešte nemáme.",
+        partial_match: "Nie je to žiadna z nájdených? Pridaj ju.",
+        add_error: "Nepodarilo sa pridať, skús to prosím znovu.",
+        filter_all: "Všetko",
+        filter_unvoted: "Nehodnotené",
+        grid_hint: "Ťukni na smajlíka. Ďalším ťuknutím na toho istého smajlíka hlas vezmeš späť.",
+        all_rated: "Všetky sladkosti máš ohodnotené. Ďakujeme! 🎉",
+        nothing_found: "Nič sa nenašlo.",
+        list_empty: "Zatiaľ tu nie sú žiadne sladkosti. Pridaj prvú!",
+        new_badge: "NOVÁ",
+        level_1: "Fuj",
+        level_2: "Nič moc",
+        level_3: "Ujde",
+        level_4: "Dobrá",
+        level_5: "Milujem",
         overview_title: "Prehľad sladkostí",
         person_select_label: "Odpovede konkrétneho člena rodiny",
         person_select_default: "— Vyber meno —",
@@ -115,8 +128,6 @@ const I18N = {
         responses_for: "Odpovede: {name}",
         review_empty: "Zatiaľ tu nie sú žiadne vyplnené odpovede.",
         review_load_error: "Nepodarilo sa načítať odpovede. Skús to prosím znovu.",
-        edit_button: "✏️ Upraviť",
-        editing_progress: "Úprava odpovede",
         highlights_title: "Zaujímavosti",
         top_favorite_heading: "🏆 Najobľúbenejšie",
         top_unpopular_heading: "💔 Najmenej obľúbené",
@@ -125,20 +136,10 @@ const I18N = {
         highlights_not_enough: "Zatiaľ nie je dosť hlasov.",
         highlights_load_error: "Nepodarilo sa načítať.",
         range_label: "hodnotenie od {min} do {max}",
-        addgift_title: "Pridať sladkosť",
-        addgift_hint: "Nový nápad sa pridá do zoznamu, ďalší hlasujúci ho uvidí.",
-        gift_name_placeholder: "Názov sladkosti",
-        addgift_submit: "Pridať do zoznamu",
-        gift_name_required: "Napíš prosím názov sladkosti.",
-        addgift_success: 'Pridané: "{gift}" ✅ Uvidí ju ďalší hlasujúci.',
-        addgift_error: "Nepodarilo sa pridať, skús to prosím znovu.",
-        finish_back_button: "⬅ Opraviť posledné hodnotenie",
-        finish_prompt: "Napadá ťa ešte ďalšia sladkosť, ktorú sme v zozname nemali?",
-        extra_add_button: "Pridať",
-        extra_added: 'Pridané: "{gift}" ✅',
         save_error_prefix: "⚠️ {count} odpoveď(e) sa nepodarilo uložiť.",
         retry_button: "Skúsiť znovu",
         saving: "Ukladám…",
+        saved: "✓ Uložené",
         votes_none: "zatiaľ bez hlasov",
         vote_one: "hlas",
         vote_few: "hlasy",
@@ -153,21 +154,33 @@ const I18N = {
         loading: "Chargement…",
         overview_button: "📊 Aperçu des bonbons",
         highlights_button: "🏆 Points forts",
-        addgift_button: "➕ Ajouter un bonbon",
         name_required: "Indique ton prénom, s'il te plaît.",
         confirm_new_name: 'On n\'a pas trouvé "{name}" dans la liste. Tu veux continuer en tant que nouveau participant ?',
         check_name: "Vérifie ton prénom ou choisis-le dans la liste.",
-        all_done: "Tu as déjà évalué tous les bonbons de la liste. Merci ! 🎉",
         load_start_error: "Un problème est survenu pendant le chargement. Réessaie, s'il te plaît.",
-        slider_bad: "Inapproprié",
-        slider_neutral: "Sans avis",
-        slider_good: "Idéal",
-        vote_hint: "Déplacer le curseur envoie ta note et passe au bonbon suivant.",
-        comment_placeholder: "Commentaire (facultatif) — Entrée envoie, Maj+Entrée nouvelle ligne",
-        back_button: "⬅ Retour",
-        cancel_edit_button: "Annuler la modification",
-        vote_recorded: "✓ Enregistré : {score}",
-        finish_title_default: "Terminé 🎉",
+        grid_title: "Bonbons",
+        voting_as: "Votant :",
+        rated_count: "{voted} sur {total} évalués",
+        starter_title: "La liste se construit",
+        starter_text: "Il n'y a encore que quelques bonbons. Ajoute ceux que tu préfères (ou que tu détestes), et les autres pourront les évaluer aussi.",
+        search_label: "Chercher ou ajouter un bonbon",
+        search_placeholder: "Commence à taper, par ex. Haribo",
+        add_button: "➕ Ajouter « {gift} »",
+        no_match: "Ce bonbon n'est pas encore dans la liste.",
+        partial_match: "Ce n'est aucun de ceux-ci ? Ajoute-le.",
+        add_error: "Impossible d'ajouter, réessaie, s'il te plaît.",
+        filter_all: "Tous",
+        filter_unvoted: "Non évalués",
+        grid_hint: "Touche un smiley. Touche à nouveau le même smiley pour retirer ton vote.",
+        all_rated: "Tu as évalué tous les bonbons. Merci ! 🎉",
+        nothing_found: "Aucun résultat.",
+        list_empty: "Il n'y a pas encore de bonbons. Ajoute le premier !",
+        new_badge: "NOUVEAU",
+        level_1: "Beurk",
+        level_2: "Bof",
+        level_3: "Correct",
+        level_4: "Bon",
+        level_5: "J'adore",
         overview_title: "Aperçu des bonbons",
         person_select_label: "Réponses d'un membre de la famille",
         person_select_default: "— Choisis un prénom —",
@@ -178,8 +191,6 @@ const I18N = {
         responses_for: "Réponses : {name}",
         review_empty: "Il n'y a pas encore de réponses.",
         review_load_error: "Impossible de charger les réponses. Réessaie, s'il te plaît.",
-        edit_button: "✏️ Modifier",
-        editing_progress: "Modification de la réponse",
         highlights_title: "Points forts",
         top_favorite_heading: "🏆 Les plus appréciés",
         top_unpopular_heading: "💔 Les moins appréciés",
@@ -188,26 +199,29 @@ const I18N = {
         highlights_not_enough: "Pas encore assez de votes.",
         highlights_load_error: "Le chargement a échoué.",
         range_label: "note de {min} à {max}",
-        addgift_title: "Ajouter un bonbon",
-        addgift_hint: "La nouvelle idée sera ajoutée à la liste, le prochain votant la verra.",
-        gift_name_placeholder: "Nom du bonbon",
-        addgift_submit: "Ajouter à la liste",
-        gift_name_required: "Indique le nom du bonbon, s'il te plaît.",
-        addgift_success: 'Ajouté : « {gift} » ✅ Le prochain votant le verra.',
-        addgift_error: "Impossible d'ajouter, réessaie, s'il te plaît.",
-        finish_back_button: "⬅ Corriger la dernière note",
-        finish_prompt: "Tu penses à un autre bonbon qui n'était pas dans la liste ?",
-        extra_add_button: "Ajouter",
-        extra_added: 'Ajouté : « {gift} » ✅',
         save_error_prefix: "⚠️ {count} réponse(s) non enregistrée(s).",
         retry_button: "Réessayer",
         saving: "Enregistrement…",
+        saved: "✓ Enregistré",
         votes_none: "pas encore de vote",
         vote_one: "vote",
         vote_few: "votes",
         vote_many: "votes"
     }
 };
+
+// Pět stupňů hodnocení. "score" je hodnota ukládaná do sheetu.
+const LEVELS = [
+    { score: -10, emoji: "😖", labelKey: "level_1" },
+    { score: -5, emoji: "🙁", labelKey: "level_2" },
+    { score: 0, emoji: "😐", labelKey: "level_3" },
+    { score: 5, emoji: "🙂", labelKey: "level_4" },
+    { score: 10, emoji: "😍", labelKey: "level_5" }
+];
+
+// Dokud je v seznamu méně sladkostí než tohle, pole pro přidávání se
+// zvýrazní výzvou "Seznam teprve vzniká".
+const STARTER_THRESHOLD = 10;
 
 function detectLang() {
     const nav = (navigator.language || "cs").toLowerCase();
@@ -216,7 +230,16 @@ function detectLang() {
     return "cs";
 }
 
-let lang = localStorage.getItem("giftSurveyLang") || detectLang();
+let lang = readStoredLang() || detectLang();
+
+function readStoredLang() {
+    try {
+        const stored = localStorage.getItem("giftSurveyLang");
+        return I18N[stored] ? stored : null;
+    } catch (err) {
+        return null;
+    }
+}
 
 function t(key, vars) {
     const dict = I18N[lang] || I18N.cs;
@@ -242,6 +265,12 @@ function formatScore(score) {
     return sign + score.toLocaleString(localeForLang(lang), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+// Smajlík nejbližší danému skóre (-10..10).
+function emojiForScore(score) {
+    const index = Math.max(0, Math.min(LEVELS.length - 1, Math.round((Number(score) + 10) / 5)));
+    return LEVELS[index].emoji;
+}
+
 function applyStaticTranslations() {
     document.querySelectorAll("[data-i18n]").forEach(el => {
         el.textContent = t(el.getAttribute("data-i18n"));
@@ -264,11 +293,20 @@ function setLang(newLang) {
     if (lang === newLang) return;
 
     lang = newLang;
-    localStorage.setItem("giftSurveyLang", lang);
+    try {
+        localStorage.setItem("giftSurveyLang", lang);
+    } catch (err) {
+        // Bez localStorage (anonymní okno apod.) se jazyk jen nezapamatuje.
+    }
 
     applyStaticTranslations();
     updateLangButtons();
+    updateSaveStatus();
     refreshDynamicScreen();
+}
+
+function isVisible(id) {
+    return document.getElementById(id).style.display !== "none";
 }
 
 // Po přepnutí jazyka je potřeba přenačíst přeložené názvy sladkostí
@@ -276,48 +314,45 @@ function setLang(newLang) {
 // přes applyStaticTranslations, ale názvy sladkostí se překládají na
 // backendu, takže je nutné je znovu natáhnout).
 async function refreshDynamicScreen() {
-    const newGifts = await loadGifts();
-    remapQueueDisplays(newGifts);
-
-    if (document.getElementById("overviewScreen").style.display !== "none") {
+    if (isVisible("gridScreen")) {
+        renderGrid();
+        await loadGifts();
+        renderGrid();
+    } else if (isVisible("overviewScreen")) {
         showOverview();
-    } else if (document.getElementById("highlightsScreen").style.display !== "none") {
+    } else if (isVisible("highlightsScreen")) {
         showHighlights();
-    } else if (document.getElementById("reviewScreen").style.display !== "none" && currentUser) {
-        loadReviewFor(currentUser);
-    }
-}
-
-function remapQueueDisplays(newGifts) {
-    const displayByGift = {};
-    newGifts.forEach(g => { displayByGift[g.gift] = g.giftDisplay; });
-
-    queue = queue.map(item => ({
-        gift: item.gift,
-        giftDisplay: displayByGift[item.gift] || item.giftDisplay,
-        imageUrl: item.imageUrl
-    }));
-
-    const surveyVisible = document.getElementById("surveyScreen").style.display !== "none";
-    if (surveyVisible && editingIndex === null && queue.length > 0) {
-        showGift();
+    } else if (isVisible("reviewScreen") && reviewUser) {
+        loadReviewFor(reviewUser);
+    } else {
+        loadGifts();
     }
 }
 
 let allGifts = [];
-let queue = [];
-let currentUser = "";
 let respondents = [];
-let pendingCount = 0;
-let failedSaves = [];
-let history = [];
+let currentUser = "";
+let myVotes = new Map();          // gift → score pro currentUser
+let addedThisSession = [];        // kanonické názvy, nejnovější první
+let searchQuery = "";
+let filterMode = "all";           // "all" | "unvoted"
+let reviewUser = "";
 let reviewData = [];
-let editingIndex = null;
+let reviewVotes = new Map();
 
 function loadGifts() {
     return fetch(`${API}?action=gifts&lang=${lang}`)
         .then(response => response.json())
         .then(data => {
+            if (!Array.isArray(data)) throw new Error(data && data.error ? data.error : "Neplatná odpověď");
+
+            // Sladkosti přidané v téhle session si nechá, i kdyby je backend
+            // (např. kvůli cache překladů) ještě nevrátil.
+            const known = new Set(data.map(g => g.gift));
+            allGifts.forEach(g => {
+                if (!known.has(g.gift) && addedThisSession.indexOf(g.gift) >= 0) data.push(g);
+            });
+
             allGifts = data;
             return data;
         })
@@ -360,63 +395,108 @@ async function loadRespondents() {
     }
 }
 
-// Odešle odpověď na pozadí, aniž by appka musela čekat na výsledek.
-// Při chybě (např. výpadek připojení) se požadavek uloží do fronty
-// k opětovnému odeslání a nahoře se zobrazí upozornění.
-function saveResponse(payload) {
+/* ---------- Ukládání hlasů na pozadí ---------- */
+
+// Požadavky pro stejnou dvojici jméno+sladkost se posílají za sebou (ne
+// souběžně), aby rychlé překlikání mezi smajlíky nedorazilo na backend
+// v jiném pořadí a neuložil se starší hlas. Při chybě se uloží jen
+// poslední požadavek pro danou dvojici — ten se dá zkusit poslat znovu.
+let pendingCount = 0;
+const saveChains = {};
+const failedSaves = new Map();    // "jméno|sladkost" → payload
+let savedFlashTimer = null;
+let showSavedFlash = false;
+
+function saveKey(payload) {
+    return `${payload.name.toLowerCase()}|${payload.gift}`;
+}
+
+function queueSave(payload) {
+    const key = saveKey(payload);
+
     pendingCount++;
     updateSaveStatus();
 
-    return fetch(API, {
+    const send = () => fetch(API, {
         method: "POST",
         body: JSON.stringify(payload)
     })
-        .then(() => {
-            pendingCount--;
-            updateSaveStatus();
+        .then(r => r.json())
+        .then(result => {
+            if (result && result.error) throw new Error(result.error);
+            failedSaves.delete(key);
         })
         .catch(err => {
-            console.error("Uložení odpovědi selhalo:", err);
+            console.error("Uložení selhalo:", err);
+            failedSaves.set(key, payload);
+        })
+        .finally(() => {
             pendingCount--;
-            failedSaves.push(payload);
+            if (pendingCount === 0 && failedSaves.size === 0) flashSaved();
             updateSaveStatus();
         });
+
+    saveChains[key] = (saveChains[key] || Promise.resolve()).then(send);
+    return saveChains[key];
+}
+
+function flashSaved() {
+    showSavedFlash = true;
+    clearTimeout(savedFlashTimer);
+    savedFlashTimer = setTimeout(() => {
+        showSavedFlash = false;
+        updateSaveStatus();
+    }, 1500);
 }
 
 function updateSaveStatus() {
     const status = document.getElementById("saveStatus");
     if (!status) return;
 
-    if (failedSaves.length > 0) {
+    status.classList.remove("saveError", "saveOk");
+
+    if (failedSaves.size > 0) {
         status.innerHTML =
-            `${t("save_error_prefix", { count: failedSaves.length })} ` +
-            `<button type="button" onclick="retryFailedSaves()">${t("retry_button")}</button>`;
+            `${escapeHtml(t("save_error_prefix", { count: failedSaves.size }))} ` +
+            `<button type="button" onclick="retryFailedSaves()">${escapeHtml(t("retry_button"))}</button>`;
         status.classList.add("saveError");
     } else if (pendingCount > 0) {
         status.textContent = t("saving");
-        status.classList.remove("saveError");
+    } else if (showSavedFlash) {
+        status.textContent = t("saved");
+        status.classList.add("saveOk");
     } else {
         status.textContent = "";
-        status.classList.remove("saveError");
     }
 }
 
-async function retryFailedSaves() {
-    const toRetry = failedSaves;
-    failedSaves = [];
+function retryFailedSaves() {
+    const toRetry = Array.from(failedSaves.values());
+    failedSaves.clear();
     updateSaveStatus();
-
-    for (const payload of toRetry) {
-        await saveResponse(payload);
-    }
+    toRetry.forEach(payload => queueSave(payload));
 }
 
 window.addEventListener("beforeunload", (e) => {
-    if (failedSaves.length > 0 || pendingCount > 0) {
+    if (failedSaves.size > 0 || pendingCount > 0) {
         e.preventDefault();
         e.returnValue = "";
     }
 });
+
+// Nastaví nebo (při klepnutí na už zvolený stupeň) odebere hlas. "votes" je
+// mapa gift → score pro daného člověka, kterou volající zobrazuje.
+function castVote(name, gift, score, votes) {
+    if (votes.get(gift) === score) {
+        votes.delete(gift);
+        queueSave({ type: "unvote", name: name, gift: gift });
+    } else {
+        votes.set(gift, score);
+        queueSave({ name: name, gift: gift, score: score, comment: "" });
+    }
+}
+
+/* ---------- Přihlášení ---------- */
 
 function findExistingName(input) {
     const lower = input.trim().toLowerCase();
@@ -462,17 +542,13 @@ async function startSurvey() {
             giftsReady
         ]);
 
-        const alreadyVoted = new Set(startResult.alreadyVoted || []);
-        queue = allGifts.filter(item => !alreadyVoted.has(item.gift));
+        if (startResult.error) throw new Error(startResult.error);
+
+        myVotes = new Map((startResult.votes || []).map(v => [v.gift, Number(v.score)]));
 
         document.getElementById("loginScreen").style.display = "none";
-
-        if (queue.length === 0) {
-            showFinishScreen(t("all_done"));
-        } else {
-            document.getElementById("surveyScreen").style.display = "block";
-            showGift();
-        }
+        document.getElementById("gridScreen").style.display = "block";
+        renderGrid();
     } catch (err) {
         console.error(err);
         message.textContent = t("load_start_error");
@@ -482,133 +558,218 @@ async function startSurvey() {
     }
 }
 
-function showGift() {
+/* ---------- Seznam sladkostí s hlasováním ---------- */
 
-    const current = queue[0];
-    document.getElementById("giftName").textContent = current.giftDisplay;
-    setGiftImage(current.imageUrl);
-
-    document.getElementById("progress").textContent =
-        `${allGifts.length - queue.length + 1} / ${allGifts.length}`;
+// Klíč pro porovnání názvů: bez ohledu na velikost písmen, diakritiku
+// a vícenásobné mezery (stejně jako matchKey_ v Code.gs).
+function matchKey(text) {
+    return String(text || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "");
 }
 
-// Zobrazí obrázek sladkosti na hlasovací obrazovce, nebo ho schová, pokud
-// sladkost obrázek nemá (uživatelem přidané nápady obrázek nikdy nemají).
-function setGiftImage(url) {
-    const img = document.getElementById("giftImage");
+function giftKeys(item) {
+    return [matchKey(item.giftDisplay), matchKey(item.gift)];
+}
 
-    if (url) {
-        img.src = url;
-        img.style.display = "block";
-    } else {
-        img.removeAttribute("src");
-        img.style.display = "none";
+function sortedGifts() {
+    const collator = new Intl.Collator(localeForLang(lang));
+    const added = addedThisSession
+        .map(gift => allGifts.find(g => g.gift === gift))
+        .filter(Boolean);
+    const rest = allGifts
+        .filter(g => addedThisSession.indexOf(g.gift) < 0)
+        .sort((a, b) => collator.compare(a.giftDisplay, b.giftDisplay));
+    return added.concat(rest);
+}
+
+function onSearchInput() {
+    searchQuery = document.getElementById("searchInput").value;
+    document.getElementById("addMessage").textContent = "";
+    renderGrid();
+}
+
+function setFilter(mode) {
+    filterMode = mode;
+    renderGrid();
+}
+
+function renderGrid() {
+    const query = matchKey(searchQuery);
+    const trimmed = searchQuery.trim();
+    const gifts = sortedGifts();
+
+    // Hlavička
+    const meta = document.getElementById("gridMeta");
+    meta.innerHTML = "";
+    meta.append(`${t("voting_as")} `);
+    const strong = document.createElement("strong");
+    strong.textContent = currentUser;
+    meta.append(strong);
+    const votedCount = allGifts.filter(g => myVotes.has(g.gift)).length;
+    meta.append(` · ${t("rated_count", { voted: votedCount, total: allGifts.length })}`);
+
+    // Zvýraznění na začátku, dokud je sladkostí málo
+    const starter = allGifts.length < STARTER_THRESHOLD;
+    document.getElementById("searchCard").classList.toggle("starter", starter);
+    document.getElementById("starterIntro").style.display = starter ? "block" : "none";
+
+    // Filtrování
+    let visible = gifts;
+    if (query) visible = visible.filter(g => giftKeys(g).some(k => k.indexOf(query) >= 0));
+    if (filterMode === "unvoted") visible = visible.filter(g => !myVotes.has(g.gift));
+
+    // Přidání nové sladkosti — jen když žádná existující nesedí přesně
+    const exact = query && allGifts.some(g => giftKeys(g).indexOf(query) >= 0);
+    const showAdd = trimmed.length > 0 && !exact;
+    document.getElementById("addArea").style.display = showAdd ? "block" : "none";
+    if (showAdd) {
+        const matchesAny = gifts.some(g => giftKeys(g).some(k => k.indexOf(query) >= 0));
+        document.getElementById("addHint").textContent = matchesAny ? t("partial_match") : t("no_match");
+        document.getElementById("addButton").textContent = t("add_button", { gift: trimmed });
+    }
+
+    // Filtr
+    document.getElementById("filterAll").classList.toggle("active", filterMode === "all");
+    document.getElementById("filterAll").setAttribute("aria-pressed", String(filterMode === "all"));
+    document.getElementById("filterUnvoted").classList.toggle("active", filterMode === "unvoted");
+    document.getElementById("filterUnvoted").setAttribute("aria-pressed", String(filterMode === "unvoted"));
+
+    // Prázdný výsledek
+    const empty = document.getElementById("gridEmpty");
+    let emptyText = "";
+    if (visible.length === 0 && !showAdd) {
+        if (allGifts.length === 0) emptyText = t("list_empty");
+        else if (filterMode === "unvoted" && !query) emptyText = t("all_rated");
+        else emptyText = t("nothing_found");
+    }
+    empty.textContent = emptyText;
+    empty.style.display = emptyText ? "block" : "none";
+
+    // Dlaždice
+    const list = document.getElementById("candyList");
+    list.innerHTML = "";
+    visible.forEach(item => {
+        list.appendChild(createCandyTile(item, myVotes, currentUser, {
+            isNew: addedThisSession.indexOf(item.gift) >= 0,
+            onChange: updateGridMeta
+        }));
+    });
+}
+
+function updateGridMeta() {
+    const meta = document.getElementById("gridMeta");
+    const votedCount = allGifts.filter(g => myVotes.has(g.gift)).length;
+    meta.lastChild.textContent = ` · ${t("rated_count", { voted: votedCount, total: allGifts.length })}`;
+}
+
+// Jedna dlaždice: název + pět smajlíků. Po klepnutí se aktualizuje jen
+// tahle dlaždice (seznam se nepřekresluje), takže i ve filtru
+// "Nehodnocené" zůstane na místě a hlas jde hned vzít zpět.
+function createCandyTile(item, votes, voterName, options) {
+    const tile = document.createElement("div");
+    tile.className = "candyTile";
+
+    const head = document.createElement("div");
+    head.className = "candyHead";
+
+    const name = document.createElement("div");
+    name.className = "candyName";
+    name.textContent = item.giftDisplay;
+    name.title = item.giftDisplay;
+    head.appendChild(name);
+
+    if (options && options.isNew) {
+        const badge = document.createElement("span");
+        badge.className = "newBadge";
+        badge.textContent = t("new_badge");
+        head.appendChild(badge);
+    }
+
+    tile.appendChild(head);
+
+    const levels = document.createElement("div");
+    levels.className = "levels";
+    levels.setAttribute("role", "group");
+    levels.setAttribute("aria-label", item.giftDisplay);
+
+    const buttons = LEVELS.map(level => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "levelBtn";
+        btn.textContent = level.emoji;
+        btn.setAttribute("aria-label", t(level.labelKey));
+        btn.title = t(level.labelKey);
+        btn.addEventListener("click", () => {
+            castVote(voterName, item.gift, level.score, votes);
+            refresh();
+            if (options && options.onChange) options.onChange();
+        });
+        levels.appendChild(btn);
+        return { btn: btn, score: level.score };
+    });
+
+    function refresh() {
+        const current = votes.has(item.gift) ? votes.get(item.gift) : null;
+        // Hlas mimo pět stupňů (starší data) se vyznačí u nejbližšího smajlíka.
+        const shown = current === null ? null : LEVELS[Math.max(0, Math.min(4, Math.round((current + 10) / 5)))].score;
+        tile.classList.toggle("voted", current !== null);
+        buttons.forEach(b => {
+            const selected = b.score === shown;
+            b.btn.classList.toggle("selected", selected);
+            b.btn.setAttribute("aria-pressed", String(selected));
+        });
+    }
+
+    tile.appendChild(levels);
+    refresh();
+    return tile;
+}
+
+async function addCandy() {
+    const input = document.getElementById("searchInput");
+    const text = input.value.trim().replace(/\s+/g, " ");
+    const message = document.getElementById("addMessage");
+    const button = document.getElementById("addButton");
+
+    if (!text) return;
+
+    button.disabled = true;
+    message.textContent = "";
+
+    try {
+        const response = await fetch(API, {
+            method: "POST",
+            body: JSON.stringify({ type: "addgift", gift: text, lang: lang })
+        }).then(r => r.json());
+
+        if (response.error) throw new Error(response.error);
+
+        const gift = response.gift || text;
+
+        if (!allGifts.some(g => g.gift === gift)) {
+            allGifts.push({ gift: gift, giftDisplay: gift });
+        }
+        if (!response.existed && addedThisSession.indexOf(gift) < 0) {
+            addedThisSession.unshift(gift);
+        }
+
+        input.value = "";
+        searchQuery = "";
+        filterMode = "all";
+        renderGrid();
+    } catch (err) {
+        console.error(err);
+        message.textContent = t("add_error");
+    } finally {
+        button.disabled = false;
     }
 }
 
-function updateSliderValue(slider, labelId) {
-    const value = Number(slider.value);
-    const label = document.getElementById(labelId);
-
-    label.textContent = value;
-    label.style.color = value > 0 ? "#4f9d70" : value < 0 ? "#d97a63" : "#9a9690";
-}
-
-function resetVoteControls() {
-    const slider = document.getElementById("scoreSlider");
-    slider.value = 0;
-    updateSliderValue(slider, "sliderValue");
-    document.getElementById("commentInput").value = "";
-}
-
-const VOTE_CONFIRM_DELAY_MS = 900;
-let voteInFlight = false;
-
-function submitVote() {
-
-    // Pojistka proti dvojímu odeslání (např. Enter v komentáři hned po
-    // posunu posuvníku) — bez ní by druhé volání během čekání na potvrzení
-    // omylem přeskočilo další sladkost navíc.
-    if (voteInFlight) return;
-    voteInFlight = true;
-
-    const current = editingIndex !== null ? reviewData[editingIndex] : queue[0];
-    const gift = current.gift;
-    const giftDisplay = current.giftDisplay;
-    const imageUrl = current.imageUrl;
-    const score = Number(document.getElementById("scoreSlider").value);
-    const comment = document.getElementById("commentInput").value.trim();
-
-    // Uložení běží na pozadí hned, appka ale chvíli počká, než přejde dál —
-    // aby bylo vidět, že se hodnocení opravdu zaznamenalo.
-    saveResponse({ name: currentUser, gift: gift, score: score, comment: comment });
-
-    showVoteConfirm(score);
-
-    setTimeout(() => {
-        voteInFlight = false;
-        hideVoteConfirm();
-        finishVote(gift, giftDisplay, imageUrl, score, comment);
-    }, VOTE_CONFIRM_DELAY_MS);
-}
-
-function showVoteConfirm(score) {
-    const confirmEl = document.getElementById("voteConfirm");
-    const sign = score > 0 ? "+" : "";
-
-    confirmEl.textContent = t("vote_recorded", { score: `${sign}${score}` });
-    confirmEl.style.display = "block";
-
-    // Zamčeno na dobu potvrzení, ať mezitím nejde odejít (Zpět/Zrušit
-    // úpravu) a nekolidovat s odloženým finishVote().
-    document.getElementById("scoreSlider").disabled = true;
-    document.getElementById("commentInput").disabled = true;
-    document.getElementById("backButton").disabled = true;
-    document.getElementById("cancelEditButton").disabled = true;
-    document.getElementById("voteHint").style.display = "none";
-}
-
-function hideVoteConfirm() {
-    document.getElementById("voteConfirm").style.display = "none";
-    document.getElementById("scoreSlider").disabled = false;
-    document.getElementById("commentInput").disabled = false;
-    document.getElementById("backButton").disabled = false;
-    document.getElementById("cancelEditButton").disabled = false;
-    document.getElementById("voteHint").style.display = "block";
-}
-
-function finishVote(gift, giftDisplay, imageUrl, score, comment) {
-
-    if (editingIndex !== null) {
-        reviewData[editingIndex] = { gift: gift, giftDisplay: giftDisplay, imageUrl: imageUrl, score: score, comment: comment };
-        editingIndex = null;
-        sortReviewData();
-        document.getElementById("cancelEditButton").style.display = "none";
-        document.getElementById("surveyScreen").style.display = "none";
-        renderReview();
-        document.getElementById("reviewScreen").style.display = "block";
-        return;
-    }
-
-    history.push({ gift: gift, giftDisplay: giftDisplay, imageUrl: imageUrl, score: score, comment: comment });
-    queue.shift();
-    updateBackButtons();
-
-    if (queue.length === 0) {
-        document.getElementById("surveyScreen").style.display = "none";
-        showFinishScreen(t("finish_title_default"));
-    } else {
-        resetVoteControls();
-        showGift();
-    }
-}
-
-function cancelEdit() {
-    editingIndex = null;
-    document.getElementById("cancelEditButton").style.display = "none";
-    document.getElementById("surveyScreen").style.display = "none";
-    document.getElementById("reviewScreen").style.display = "block";
-}
+/* ---------- Přehled ---------- */
 
 // Přehled sladkostí seřazený podle popularity napříč všemi hlasujícími —
 // nevyžaduje zadání jména, jde na něj rovnou z úvodní obrazovky.
@@ -624,6 +785,7 @@ async function showOverview() {
     try {
         const response = await fetch(`${API}?action=giftstats&lang=${lang}`);
         const stats = await response.json();
+        if (!Array.isArray(stats)) throw new Error(stats && stats.error);
         renderOverview(stats);
     } catch (err) {
         console.error(err);
@@ -636,6 +798,10 @@ function voteCountLabel(count) {
     if (count === 1) return `1 ${t("vote_one")}`;
     if (count <= 4) return `${count} ${t("vote_few")}`;
     return `${count} ${t("vote_many")}`;
+}
+
+function scoreColor(score) {
+    return score > 0 ? "var(--positive)" : score < 0 ? "var(--negative)" : "var(--neutral)";
 }
 
 function renderOverview(stats) {
@@ -653,28 +819,25 @@ function renderOverview(stats) {
         row.className = "reviewItem";
 
         const hasVotes = item.voteCount > 0;
-        const scoreColor = !hasVotes ? "#9a9690" : item.avgScore > 0 ? "#4f9d70" : item.avgScore < 0 ? "#d97a63" : "#9a9690";
-        const scoreText = hasVotes ? formatScore(item.avgScore) : "—";
+        const color = hasVotes ? scoreColor(item.avgScore) : "var(--neutral)";
+        const scoreText = hasVotes ? `${emojiForScore(item.avgScore)} ${formatScore(item.avgScore)}` : "—";
 
         row.innerHTML =
-            `<div class="itemRow">` +
-                (item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="" class="itemThumb" onerror="this.remove()">` : "") +
-                `<div class="itemText">` +
-                    `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
-                    `<div class="reviewScore" style="color:${scoreColor}">${scoreText}</div>` +
-                    `<div class="hint" style="margin-top:2px;">${voteCountLabel(item.voteCount)}</div>` +
-                `</div>` +
-            `</div>`;
+            `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
+            `<div class="reviewScore" style="color:${color}">${scoreText}</div>` +
+            `<div class="hint" style="margin-top:2px;text-align:left;">${voteCountLabel(item.voteCount)}</div>`;
 
         container.appendChild(row);
     });
 }
 
-// Zobrazí odpovědi konkrétního člověka (vybraného v přehledu) s možností
-// úpravy — nemusí to být appka mého vlastního hlasování, klidně někdo jiný.
+/* ---------- Odpovědi konkrétního člověka ---------- */
+
+// Zobrazí hlasy konkrétního člověka (vybraného v přehledu) a umožní je
+// změnit nebo odebrat — stejnými smajlíky jako v hlavním seznamu.
 async function loadReviewFor(name) {
 
-    currentUser = name;
+    reviewUser = name;
 
     const container = document.getElementById("reviewList");
     document.getElementById("reviewTitle").textContent = t("responses_for", { name: name });
@@ -682,13 +845,30 @@ async function loadReviewFor(name) {
 
     try {
         const response = await fetch(`${API}?action=myresponses&name=${encodeURIComponent(name)}&lang=${lang}`);
-        reviewData = await response.json();
-        sortReviewData();
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error(data && data.error);
+
+        reviewData = data.sort((a, b) => b.score - a.score);
+        reviewVotes = new Map(reviewData.map(item => [item.gift, Number(item.score)]));
         renderReview();
     } catch (err) {
         console.error(err);
         container.innerHTML = `<p class="message">${t("review_load_error")}</p>`;
     }
+}
+
+function renderReview() {
+    const container = document.getElementById("reviewList");
+    container.innerHTML = "";
+
+    if (reviewData.length === 0) {
+        container.innerHTML = `<p>${t("review_empty")}</p>`;
+        return;
+    }
+
+    reviewData.forEach(item => {
+        container.appendChild(createCandyTile(item, reviewVotes, reviewUser));
+    });
 }
 
 async function onPersonSelected() {
@@ -705,6 +885,8 @@ async function onPersonSelected() {
     await loadReviewFor(name);
 }
 
+/* ---------- Zajímavosti ---------- */
+
 async function showHighlights() {
 
     document.getElementById("loginScreen").style.display = "none";
@@ -718,15 +900,16 @@ async function showHighlights() {
     try {
         const response = await fetch(`${API}?action=highlights&lang=${lang}`);
         const data = await response.json();
+        if (data.error) throw new Error(data.error);
 
         renderHighlightList("topFavoriteList", data.topFavorite, item =>
-            `${formatScore(item.avgScore)} · ${voteCountLabel(item.voteCount)}`);
+            `${emojiForScore(item.avgScore)} ${formatScore(item.avgScore)} · ${voteCountLabel(item.voteCount)}`);
 
         renderHighlightList("topUnpopularList", data.topUnpopular, item =>
-            `${formatScore(item.avgScore)} · ${voteCountLabel(item.voteCount)}`);
+            `${emojiForScore(item.avgScore)} ${formatScore(item.avgScore)} · ${voteCountLabel(item.voteCount)}`);
 
         renderHighlightList("topControversialList", data.topControversial, item =>
-            `${t("range_label", { min: item.min, max: item.max })} · ${voteCountLabel(item.voteCount)}`);
+            `${t("range_label", { min: emojiForScore(item.min), max: emojiForScore(item.max) })} · ${voteCountLabel(item.voteCount)}`);
     } catch (err) {
         console.error(err);
         listIds.forEach(id => {
@@ -750,10 +933,9 @@ function renderHighlightList(containerId, items, subtitleFn) {
 
         row.innerHTML =
             `<span class="highlightRank">${index + 1}.</span>` +
-            (item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="" class="itemThumb" onerror="this.remove()">` : "") +
             `<div class="highlightBody">` +
                 `<div class="highlightGift">${escapeHtml(item.giftDisplay)}</div>` +
-                `<div class="hint" style="margin-top:2px;text-align:left;">${subtitleFn(item)}</div>` +
+                `<div class="hint" style="margin-top:2px;text-align:left;">${escapeHtml(subtitleFn(item))}</div>` +
                 renderDistribution(item.histogram) +
             `</div>`;
 
@@ -777,8 +959,7 @@ function renderDistribution(histogram) {
         // Odsazeno o poloměr tečky, ať se u krajních hodnot (-10/+10)
         // vejde celá dovnitř pásu místo přesahu za okraj.
         const left = `calc(${radius}px + ${fraction} * (100% - ${size}px))`;
-        const sign = h.score > 0 ? "+" : "";
-        const label = `${sign}${h.score}`;
+        const label = emojiForScore(h.score);
         const names = (h.names || []).join(", ");
 
         // title = nápověda při hoveru na počítači; klepnutí (showDotInfo)
@@ -790,10 +971,6 @@ function renderDistribution(histogram) {
     }).join("");
 
     return `<div class="distStrip">${dots}</div>`;
-}
-
-function escapeAttr(str) {
-    return escapeHtml(str).replace(/"/g, "&quot;");
 }
 
 // Klepnutí na tečku ukáže/skryje bublinu se jmény hlasujících, kteří dali
@@ -812,7 +989,7 @@ function showDotInfo(dot, event) {
     const popup = document.createElement("div");
     popup.className = "distPopup";
     popup.style.left = dot.style.left;
-    popup.textContent = names ? `${label}: ${names}` : label;
+    popup.textContent = names ? `${label} ${names}` : label;
 
     dot.parentElement.appendChild(popup);
     dot.dataset.open = "true";
@@ -825,104 +1002,7 @@ function closeAllDotPopups() {
 
 document.addEventListener("click", closeAllDotPopups);
 
-function showAddGiftScreen() {
-    document.getElementById("loginScreen").style.display = "none";
-    document.getElementById("addGiftScreen").style.display = "block";
-    document.getElementById("addGiftMessage").textContent = "";
-}
-
-async function submitNewGift() {
-
-    const input = document.getElementById("newGiftInput");
-    const gift = input.value.trim();
-    const message = document.getElementById("addGiftMessage");
-    const button = document.getElementById("addGiftButton");
-
-    if (!gift) {
-        message.textContent = t("gift_name_required");
-        return;
-    }
-
-    button.disabled = true;
-    message.textContent = "";
-
-    try {
-        const response = await fetch(API, {
-            method: "POST",
-            body: JSON.stringify({ type: "addgift", gift: gift, lang: lang })
-        }).then(r => r.json());
-
-        if (response.error) {
-            message.textContent = response.error;
-        } else {
-            message.textContent = t("addgift_success", { gift: gift });
-            input.value = "";
-            allGifts.push({ gift: gift, giftDisplay: gift });
-        }
-    } catch (err) {
-        console.error(err);
-        message.textContent = t("addgift_error");
-    } finally {
-        button.disabled = false;
-    }
-}
-
-function sortReviewData() {
-    // Od nejvyššího hodnocení po nejnižší.
-    reviewData.sort((a, b) => b.score - a.score);
-}
-
-function renderReview() {
-
-    const container = document.getElementById("reviewList");
-    container.innerHTML = "";
-
-    if (reviewData.length === 0) {
-        container.innerHTML = `<p>${t("review_empty")}</p>`;
-        return;
-    }
-
-    reviewData.forEach((item, index) => {
-        const row = document.createElement("div");
-        row.className = "reviewItem";
-
-        const scoreColor = item.score > 0 ? "#4f9d70" : item.score < 0 ? "#d97a63" : "#9a9690";
-
-        row.innerHTML =
-            `<div class="itemRow">` +
-                (item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="" class="itemThumb" onerror="this.remove()">` : "") +
-                `<div class="itemText">` +
-                    `<div class="reviewGift">${escapeHtml(item.giftDisplay)}</div>` +
-                    `<div class="reviewScore" style="color:${scoreColor}">${item.score}</div>` +
-                    (item.comment ? `<div class="reviewComment">${escapeHtml(item.comment)}</div>` : "") +
-                `</div>` +
-            `</div>` +
-            `<button type="button" class="secondary" onclick="editReviewItem(${index})">${t("edit_button")}</button>`;
-
-        container.appendChild(row);
-    });
-}
-
-function editReviewItem(index) {
-
-    const item = reviewData[index];
-    editingIndex = index;
-
-    document.getElementById("reviewScreen").style.display = "none";
-    document.getElementById("surveyScreen").style.display = "block";
-
-    document.getElementById("giftName").textContent = item.giftDisplay;
-    setGiftImage(item.imageUrl);
-    document.getElementById("progress").textContent = t("editing_progress");
-
-    const slider = document.getElementById("scoreSlider");
-    slider.value = item.score;
-    updateSliderValue(slider, "sliderValue");
-    document.getElementById("commentInput").value = item.comment;
-
-    document.getElementById("backButton").style.display = "none";
-    document.getElementById("cancelEditButton").style.display = "block";
-}
+/* ---------- Pomocné ---------- */
 
 function escapeHtml(str) {
     const div = document.createElement("div");
@@ -930,78 +1010,16 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-// Vrátí appku na naposledy ohodnocenou sladkost, ať se dá hodnocení opravit.
-// Odeslání stejného jména+sladkosti znovu ho v Sheetu jen přepíše (viz
-// Code.gs), takže tím nevznikne duplicitní řádek.
-function goBack() {
-
-    if (history.length === 0) return;
-
-    const prev = history.pop();
-    queue.unshift({ gift: prev.gift, giftDisplay: prev.giftDisplay, imageUrl: prev.imageUrl });
-    updateBackButtons();
-
-    document.getElementById("finishScreen").style.display = "none";
-    document.getElementById("surveyScreen").style.display = "block";
-
-    showGift();
-
-    const slider = document.getElementById("scoreSlider");
-    slider.value = prev.score;
-    updateSliderValue(slider, "sliderValue");
-    document.getElementById("commentInput").value = prev.comment;
+function escapeAttr(str) {
+    return escapeHtml(str).replace(/"/g, "&quot;");
 }
 
-function updateBackButtons() {
-    const display = history.length > 0 ? "block" : "none";
-    document.getElementById("backButton").style.display = display;
-    document.getElementById("finishBackButton").style.display = display;
-}
-
-function showFinishScreen(title) {
-    document.getElementById("finishTitle").textContent = title;
-    document.getElementById("finishScreen").style.display = "block";
-}
-
-function saveExtraGift() {
-
-    const giftInput = document.getElementById("extraGift");
-    const gift = giftInput.value.trim();
-    const scoreSlider = document.getElementById("extraScoreSlider");
-    const score = Number(scoreSlider.value);
-    const commentInput = document.getElementById("extraComment");
-    const comment = commentInput.value.trim();
-    const message = document.getElementById("extraMessage");
-
-    if (!gift) {
-        message.textContent = t("gift_name_required");
-        return;
+document.getElementById("searchInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && document.getElementById("addArea").style.display !== "none") {
+        e.preventDefault();
+        addCandy();
     }
-
-    saveResponse({ name: currentUser, gift: gift, score: score, comment: comment });
-
-    message.textContent = t("extra_added", { gift: gift });
-    giftInput.value = "";
-    scoreSlider.value = 0;
-    updateSliderValue(scoreSlider, "extraSliderValue");
-    commentInput.value = "";
-}
-
-function submitOnEnter(inputId, submitFn) {
-    document.getElementById(inputId).addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submitFn();
-        }
-    });
-}
-
-submitOnEnter("commentInput", submitVote);
-submitOnEnter("extraComment", saveExtraGift);
-
-// "change" (na rozdíl od "input") se spustí až po dokončení tahu/kliknutí,
-// takže samotné nastavení posuvníku rovnou odešle hodnocení.
-document.getElementById("scoreSlider").addEventListener("change", submitVote);
+});
 
 applyStaticTranslations();
 updateLangButtons();
